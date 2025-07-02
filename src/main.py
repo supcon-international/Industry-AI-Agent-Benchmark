@@ -59,6 +59,25 @@ class FactorySimulation:
         self.command_handler = CommandHandler(self.factory, self.mqtt_client)
         logger.info("🎯 Command handler initialized and listening for agent commands")
         
+    def _calculate_station_utilization(self, station) -> float:
+        """Calculate actual utilization of a station based on processing time and idle time."""
+        if not hasattr(station, 'total_processing_time') or not hasattr(station, 'total_idle_time'):
+            # If tracking isn't implemented yet, estimate based on status
+            if station.status.value == 'processing':
+                return 0.85  # High utilization when processing
+            elif station.status.value == 'idle':
+                return 0.15  # Low utilization when idle
+            elif station.status.value == 'error':
+                return 0.0   # No utilization during errors
+            else:
+                return 0.5   # Medium utilization for other states
+        
+        total_time = station.total_processing_time + station.total_idle_time
+        if total_time == 0:
+            return 0.0
+        
+        return min(1.0, station.total_processing_time / total_time)
+
     def start_status_publishing(self):
         """Start a process to periodically publish factory status to MQTT."""
         if not self.factory or not self.mqtt_client:
@@ -77,7 +96,7 @@ class FactorySimulation:
                         "timestamp": factory.env.now,
                         "source_id": station_id,
                         "status": station.status.value,
-                        "utilization": 0.8,  # TODO: Calculate actual utilization
+                        "utilization": self._calculate_station_utilization(station),
                         "buffer_level": len(station.buffer.items)
                     }
                     
@@ -104,13 +123,13 @@ class FactorySimulation:
                     
                     topic = get_agv_status_topic(agv_id)
                     status_msg = AGVStatus.model_validate(status_data)
-                    self.mqtt_client.publish(topic, status_msg)
+                    mqtt_client.publish(topic, status_msg)
                 
                 # Wait 10 seconds before next status update
-                yield self.factory.env.timeout(10.0)
+                yield factory.env.timeout(10.0)
         
         # Start the status publishing process
-        self.factory.env.process(status_publisher())
+        factory.env.process(status_publisher())
         logger.info("📊 Status publishing started (every 10 seconds)")
 
     def run(self, duration: int = None):

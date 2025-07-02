@@ -13,7 +13,7 @@ KPI_UPDATE_TOPIC = "factory/kpi/update"
 # Agent command topics (published by AI agents)
 AGENT_COMMANDS_TOPIC = "factory/agent/commands"
 
-# Optional: Natural language logs for visualization
+# Natural language logs for visualization
 NL_LOGS_TOPIC = "factory/agent/nl_logs"
 
 # Topic patterns for subscription
@@ -24,18 +24,6 @@ ALL_FACTORY_TOPICS = "factory/+"
 # Legacy topic definitions (keeping for backward compatibility)
 FACTORY_STATUS_TOPIC_PREFIX = "factory/station"
 AGV_STATUS_TOPIC_PREFIX = "factory/resource"
-ORDER_TOPIC_PREFIX = "factory/orders"
-KPI_TOPIC = "factory/kpi/update"
-
-# Topic for receiving new orders
-NEW_ORDER_TOPIC = f"{ORDER_TOPIC_PREFIX}/new"
-
-# Topic for agent commands
-AGENT_COMMANDS_TOPIC = "factory/agent/commands"
-
-# Optional topic for agent's natural language logs (for visualization)
-AGENT_NL_LOGS_TOPIC = "factory/agent/nl_logs"
-
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""

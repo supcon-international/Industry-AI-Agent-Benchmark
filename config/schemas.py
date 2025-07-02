@@ -10,11 +10,57 @@ class DeviceStatus(str, Enum):
     PROCESSING = "processing"
     ERROR = "error"
     MAINTENANCE = "maintenance"
+    FROZEN = "frozen"  # 新增：因诊断错误而冻结的状态
 
 class OrderPriority(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+# --- 新增：设备详细状态信息 ---
+
+class DeviceDetailedStatus(BaseModel):
+    """设备详细状态信息，用于inspect功能"""
+    # 基础信息
+    device_id: str = Field(..., description="设备ID")
+    device_type: str = Field(..., description="设备类型（station/agv）")
+    current_status: DeviceStatus = Field(..., description="当前设备状态")
+    
+    # 性能指标
+    temperature: float = Field(..., description="设备温度（°C）")
+    vibration_level: float = Field(..., description="振动水平（mm/s）")
+    power_consumption: float = Field(..., description="功耗（W）")
+    efficiency_rate: float = Field(..., description="效率率（%）")
+    
+    # 工作状态
+    cycle_count: int = Field(..., description="工作循环次数")
+    last_maintenance_time: float = Field(..., description="上次维护时间")
+    operating_hours: float = Field(..., description="运行小时数")
+    
+    # 故障相关
+    has_fault: bool = Field(..., description="是否有故障")
+    fault_symptom: Optional[str] = Field(None, description="故障症状")
+    frozen_until: Optional[float] = Field(None, description="冻结到什么时候")
+    
+    # 特定于工站的属性
+    precision_level: Optional[float] = Field(None, description="加工精度水平")
+    tool_wear_level: Optional[float] = Field(None, description="刀具磨损程度")
+    lubricant_level: Optional[float] = Field(None, description="润滑油水平")
+    
+    # 特定于AGV的属性
+    battery_level: Optional[float] = Field(None, description="电池电量")
+    position_accuracy: Optional[float] = Field(None, description="定位精度")
+    load_weight: Optional[float] = Field(None, description="当前载重")
+
+class DiagnosisResult(BaseModel):
+    """诊断结果schema"""
+    device_id: str = Field(..., description="设备ID")
+    diagnosis_command: str = Field(..., description="诊断命令")
+    is_correct: bool = Field(..., description="诊断是否正确")
+    repair_time: float = Field(..., description="修复时间（秒）")
+    penalty_applied: bool = Field(..., description="是否应用了惩罚")
+    affected_devices: List[str] = Field([], description="受影响的其他设备")
+    can_skip: bool = Field(..., description="是否可以跳过等待时间")
 
 # --- Schemas for MQTT Messages ---
 

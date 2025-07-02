@@ -118,23 +118,25 @@ def test_command_handling():
         
         # 测试正确的维修命令
         print("\n🔧 测试正确的维修命令...")
-        success, repair_time = factory.fault_system.handle_maintenance_request(
+        result = factory.fault_system.handle_maintenance_request(
             "StationB", fault.correct_repair_command
         )
         
         print(f"✅ 命令处理测试完成")
-        print(f"   - 诊断正确: {success}")
-        print(f"   - 修复时间: {repair_time:.1f}秒")
+        print(f"   - 诊断正确: {result.is_correct}")
+        print(f"   - 修复时间: {result.repair_time:.1f}秒")
+        print(f"   - 可跳过等待: {result.can_skip}")
         
         # 测试错误的维修命令
         factory.fault_system.inject_random_fault("StationC", None)
         print("\n❌ 测试错误的维修命令...")
-        success2, repair_time2 = factory.fault_system.handle_maintenance_request(
+        result2 = factory.fault_system.handle_maintenance_request(
             "StationC", "wrong_command"
         )
         
-        print(f"   - 诊断正确: {success2}")
-        print(f"   - 惩罚修复时间: {repair_time2:.1f}秒")
+        print(f"   - 诊断正确: {result2.is_correct}")
+        print(f"   - 惩罚修复时间: {result2.repair_time:.1f}秒")
+        print(f"   - 受影响设备: {len(result2.affected_devices)}个")
         
         return True
         

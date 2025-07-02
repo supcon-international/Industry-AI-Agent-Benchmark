@@ -1,0 +1,183 @@
+# SUPCON Factory Layout Configuration
+# This file defines the physical layout and parameters of the factory simulation
+
+factory:
+  name: "SUPCON AdventureX Factory"
+  description: "智能制造仿真工厂"
+
+# 路径点定义 (x, y坐标)
+path_points:
+  P0: [5, 20]    # 入口点
+  P1: [12, 20]   # StationA前
+  P2: [18, 20]   # StationA后
+  P3: [32, 20]   # StationB前
+  P4: [38, 20]   # StationB后
+  P5: [58, 20]   # StationC前
+  P6: [72, 20]   # StationC后
+  P7: [78, 20]   # QualityCheck前
+  P8: [85, 20]   # QualityCheck后
+  P9: [10, 10]   # 维护区域
+
+# 路径段定义 (单向路径)
+path_segments:
+  - [P0, P1]  # 主线向前
+  - [P1, P2]
+  - [P2, P3]
+  - [P3, P4]
+  - [P4, P5]
+  - [P5, P6]
+  - [P6, P7]
+  - [P7, P8]
+  - [P2, P1]  # 返回路径
+  - [P1, P0]
+  - [P4, P3]
+  - [P3, P2]
+  - [P6, P5]
+  - [P5, P4]
+  - [P8, P7]
+  - [P7, P6]
+
+# 工站配置
+stations:
+  - id: "StationA"
+    name: "组装工站"
+    position: [15, 20]
+    buffer_size: 3
+    processing_times:  # 产品类型: [最小时间, 最大时间] (秒)
+      P1: [30, 45]
+      P2: [40, 60]
+      P3: [35, 50]
+    precision_level: 98.5  # 基础精度水平 (%)
+    maintenance_cost: 150  # 维修基础成本
+    
+  - id: "StationB"
+    name: "焊接工站"
+    position: [35, 20]
+    buffer_size: 3
+    processing_times:
+      P1: [45, 60]
+      P2: [60, 80]
+      P3: [50, 70]
+    precision_level: 97.0
+    maintenance_cost: 200
+    
+  - id: "StationC"
+    name: "测试工站"
+    position: [55, 20]
+    buffer_size: 3
+    processing_times:
+      P1: [20, 30]
+      P2: [30, 40]
+      P3: [25, 35]
+    precision_level: 99.0
+    maintenance_cost: 120
+    
+  - id: "QualityCheck"
+    name: "质量检测站"
+    position: [75, 20]
+    buffer_size: 2
+    processing_times:
+      P1: [15, 25]
+      P2: [20, 30]
+      P3: [20, 30]
+    precision_level: 99.8
+    maintenance_cost: 180
+
+# AGV配置
+agvs:
+  - id: "AGV_1"
+    name: "智能搬运车1号"
+    initial_position: [10, 15]
+    speed_mps: 2.0  # 移动速度 (米/秒)
+    battery_capacity: 100  # 电池容量 (%)
+    battery_consumption_rate: 0.5  # 每秒消耗 (%)
+    charging_rate: 2.0  # 充电速率 (%/秒)
+    payload_capacity: 5  # 最大载货数量
+    maintenance_cost: 100
+    
+  - id: "AGV_2"
+    name: "智能搬运车2号"
+    initial_position: [10, 25]
+    speed_mps: 2.0
+    battery_capacity: 100
+    battery_consumption_rate: 0.5
+    charging_rate: 2.0
+    payload_capacity: 5
+    maintenance_cost: 100
+
+# 生产参数
+production:
+  # 订单生成参数
+  order_generation:
+    interval_min: 30  # 最小间隔 (秒)
+    interval_max: 60  # 最大间隔 (秒)
+    
+    # 数量分布 (概率权重)
+    quantity_distribution:
+      1: 0.40  # 40%
+      2: 0.30  # 30%
+      3: 0.20  # 20%
+      4: 0.07  # 7%
+      5: 0.03  # 3%
+    
+    # 产品类型分布
+    product_distribution:
+      P1: 0.60  # 60%
+      P2: 0.30  # 30%
+      P3: 0.10  # 10%
+    
+    # 优先级分布
+    priority_distribution:
+      low: 0.70    # 70%
+      medium: 0.25 # 25%
+      high: 0.05   # 5%
+    
+    # 截止日期计算倍数
+    deadline_multipliers:
+      low: 3.0     # 3倍预计完成时间
+      medium: 2.0  # 2倍预计完成时间
+      high: 1.5    # 1.5倍预计完成时间
+
+  # 材料成本 (每件)
+  material_costs:
+    P1: 25.0
+    P2: 40.0
+    P3: 60.0
+  
+  # 能源成本
+  energy:
+    base_cost_per_kwh: 0.8  # 基础电价
+    peak_hour_multiplier: 1.5  # 高峰时段倍数
+    peak_hours: [9, 10, 11, 17, 18, 19, 20, 21]  # 高峰时段
+    
+  # 报废成本
+  defect_costs:
+    P1: 15.0
+    P2: 25.0
+    P3: 35.0
+
+# 故障系统参数
+fault_system:
+  injection_interval: [300, 900]  # 故障注入间隔 (5-15分钟)
+  auto_recovery_time: [600, 1800]  # 自动恢复时间 (10-30分钟)
+  
+  # 设备关系映射 (用于连锁反应)
+  device_relationships:
+    StationA: ["StationB", "AGV_1"]
+    StationB: ["StationA", "StationC", "AGV_1", "AGV_2"]
+    StationC: ["StationB", "QualityCheck", "AGV_2"]
+    QualityCheck: ["StationC"]
+    AGV_1: ["StationA", "StationB"]
+    AGV_2: ["StationB", "StationC"]
+
+# KPI计算权重
+kpi_weights:
+  production_efficiency: 0.40  # 生产效率 40%
+  cost_control: 0.30           # 成本控制 30%
+  robustness: 0.30             # 鲁棒性 30%
+
+# 系统性能参数
+system:
+  status_publish_interval: 10.0  # 状态发布间隔 (秒)
+  simulation_step_size: 0.1      # 仿真步长 (秒)
+  max_concurrent_orders: 20      # 最大并发订单数 

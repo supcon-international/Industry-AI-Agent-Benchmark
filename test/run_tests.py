@@ -23,9 +23,9 @@ def show_menu():
     print("  2. 交互式工厂体验 (test_interactive_factory.py)")
     print("     亲自体验Agent开发者的工作流程")
     print()
-    print("⚠️ 专项测试:")
-    print("  3. 故障系统专项测试 (test_fault_scenarios.py)")
-    print("     全面测试故障注入、诊断和恢复机制")
+    print("🧠 智能诊断演示:")
+    print("  3. 故障诊断系统演示 (test_fault_diagnosis_demo.py)")
+    print("     展示改进后的智能故障诊断功能 (推荐！)")
     print()
     print("⚡ 性能评估:")
     print("  4. 性能基准测试 (test_performance_benchmark.py)")
@@ -84,7 +84,7 @@ def run_all_automated_tests():
     
     tests = [
         ("test_factory_simulation.py", "基础功能测试"),
-        ("test_fault_scenarios.py", "故障系统专项测试"),
+        ("test_fault_diagnosis_demo.py", "故障诊断系统演示"),
         ("test_performance_benchmark.py", "性能基准测试")
     ]
     
@@ -151,7 +151,7 @@ def show_system_info():
     test_files = [
         "test_factory_simulation.py",
         "test_interactive_factory.py", 
-        "test_fault_scenarios.py",
+        "test_fault_diagnosis_demo.py",
         "test_performance_benchmark.py"
     ]
     
@@ -213,7 +213,7 @@ def main():
             elif choice == "2":
                 run_test_script("test_interactive_factory.py", "交互式工厂体验")
             elif choice == "3":
-                run_test_script("test_fault_scenarios.py", "故障系统专项测试")
+                run_test_script("test_fault_diagnosis_demo.py", "故障诊断系统演示")
             elif choice == "4":
                 run_test_script("test_performance_benchmark.py", "性能基准测试")
             elif choice == "5":
