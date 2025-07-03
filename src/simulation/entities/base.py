@@ -172,12 +172,24 @@ class Device:
         """解冻设备"""
         self.frozen_until = None
         if self.status == DeviceStatus.FROZEN:
-            self.set_status(DeviceStatus.IDLE)
+            # 解冻后恢复为空闲状态（如果没有其他问题）
+            if self.has_fault:
+                self.set_status(DeviceStatus.ERROR)
+            else:
+                self.set_status(DeviceStatus.IDLE)
             print(f"[{self.env.now:.2f}] ❄️  {self.id} 解冻完成")
 
     def can_operate(self) -> bool:
-        """检查设备是否可以操作"""
-        return not self.is_frozen() and self.status not in [DeviceStatus.ERROR, DeviceStatus.MAINTENANCE]
+        """🔥 关键修复：检查设备是否可以操作"""
+        # 检查冻结状态
+        if self.is_frozen():
+            return False
+            
+        # 维修状态下无法操作
+        if self.has_fault and self.status in [DeviceStatus.ERROR, DeviceStatus.MAINTENANCE, DeviceStatus.FROZEN]:
+            return False
+            
+        return True
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', status='{self.status.value}')"

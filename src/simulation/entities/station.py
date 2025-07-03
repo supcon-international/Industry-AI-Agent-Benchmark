@@ -95,7 +95,7 @@ class Station(Device):
         # For now, we'll just say the product is done.
         # Later, this will trigger moving the product to the next stage.
         print(f"[{self.env.now:.2f}] {self.id}: Finished processing product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
-        self.set_status(DeviceStatus.IDLE)
+        self.set_status(DeviceStatus.IDLE) 
         
     def get_buffer_level(self) -> int:
         """获取当前缓冲区产品数量"""

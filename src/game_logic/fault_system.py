@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-from config.schemas import DeviceDetailedStatus, DiagnosisResult
+from config.schemas import DeviceDetailedStatus, DiagnosisResult, DeviceStatus
 
 @dataclass
 class FaultDefinition:
@@ -42,6 +42,7 @@ class FaultSystem:
     def __init__(self, env: simpy.Environment, factory_devices: Dict):
         self.env = env
         self.active_faults: Dict[str, 'ActiveFault'] = {}
+        self.devices_under_repair: Dict[str, float] = {}  # device_id -> repair_end_time
         self.factory_devices = factory_devices  # 工厂中所有设备的引用
         self.device_relationship_map = self._build_device_relationships()
         
@@ -136,6 +137,10 @@ class FaultSystem:
         if detailed_status.has_fault:
             print(f"   - ⚠️  故障症状: {detailed_status.fault_symptom}")
         
+        if device_id in self.devices_under_repair:
+            remaining_time = self.devices_under_repair[device_id] - self.env.now
+            print(f"   - 🔧 正在维修中，剩余时间: {remaining_time:.1f}s")
+        
         # 设备特定信息
         if detailed_status.device_type == "station":
             if detailed_status.precision_level is not None:
@@ -176,24 +181,31 @@ class FaultSystem:
                 available_stations = [dev_id for dev_id in self.factory_devices.keys() if "Station" in dev_id or "Quality" in dev_id]
                 target_device = random.choice(available_stations) if available_stations else "StationA"
         
-        # Check if device already has an active fault
+        # Check if device already has an active fault or is under repair
         if target_device in self.active_faults:
             print(f"[{self.env.now:.2f}] ⚠️  Device {target_device} already has active fault, skipping injection")
+            return
+            
+        if target_device in self.devices_under_repair:
+            print(f"[{self.env.now:.2f}] 🔧 Device {target_device} is under repair, skipping fault injection")
             return
         
         # Create and inject the fault
         fault = self._create_fault(target_device, fault_type)
         self.active_faults[target_device] = fault
         
-        # 应用故障效果到设备
+        # 🔥 关键修复：应用故障效果到设备，设置正确的故障状态
         if target_device in self.factory_devices:
             device = self.factory_devices[target_device]
             device.apply_fault_effects(fault_type.value)
             device.fault_symptom = fault.symptom
+            # 🔥 设置设备为错误状态，使其无法操作
+            device.set_status(DeviceStatus.ERROR)
         
         print(f"[{self.env.now:.2f}] 💥 Fault injected on {target_device}")
         print(f"   - Symptom: {fault.symptom}")
         print(f"   - Hidden root cause: {fault.actual_root_cause}")
+        print(f"   - 🚫 设备已锁定，无法操作")
         
         # Start fault process
         self.env.process(self._run_fault(fault))
@@ -243,11 +255,35 @@ class FaultSystem:
             return self.active_faults[device_id].symptom
         return None
 
+    def is_device_under_repair(self, device_id: str) -> bool:
+        """检查设备是否正在维修中"""
+        if device_id in self.devices_under_repair:
+            if self.env.now < self.devices_under_repair[device_id]:
+                return True
+            else:
+                # 维修时间结束，清理记录
+                del self.devices_under_repair[device_id]
+        return False
+
     def handle_maintenance_request(self, device_id: str, maintenance_type: str, agent_id: str = "unknown") -> DiagnosisResult:
         """
-        处理维修请求，包含完整的诊断逻辑
+        处理维修请求，包含完整的诊断逻辑和维修锁定
         Returns DiagnosisResult with detailed information.
         """
+        # 🔥 关键修复：检查设备是否正在维修中
+        if self.is_device_under_repair(device_id):
+            remaining_time = self.devices_under_repair[device_id] - self.env.now
+            print(f"[{self.env.now:.2f}] 🔒 设备 {device_id} 正在维修中，剩余时间: {remaining_time:.1f}s")
+            return DiagnosisResult(
+                device_id=device_id,
+                diagnosis_command=maintenance_type,
+                is_correct=False,
+                repair_time=0.0,
+                penalty_applied=False,
+                affected_devices=[],
+                can_skip=False
+            )
+        
         if device_id not in self.active_faults:
             print(f"[{self.env.now:.2f}] ❌ No fault on {device_id} to repair")
             return DiagnosisResult(
@@ -268,6 +304,14 @@ class FaultSystem:
             repair_time = fault.correct_repair_time
             print(f"[{self.env.now:.2f}] ✅ 正确诊断 {device_id}: {maintenance_type}")
             print(f"   - 修复时间: {repair_time:.1f}s")
+            
+            # 🔥 关键修复：设置维修锁定
+            repair_end_time = self.env.now + repair_time
+            self.devices_under_repair[device_id] = repair_end_time
+            
+            # 设置设备为维修状态
+            if device_id in self.factory_devices:
+                self.factory_devices[device_id].set_status(DeviceStatus.MAINTENANCE)
             
             result = DiagnosisResult(
                 device_id=device_id,
@@ -293,6 +337,10 @@ class FaultSystem:
             if affected_devices:
                 print(f"   - 影响设备: {', '.join(affected_devices)}")
             
+            # 🔥 关键修复：错误诊断也设置维修锁定（惩罚期间）
+            penalty_end_time = self.env.now + penalty_time
+            self.devices_under_repair[device_id] = penalty_end_time
+            
             result = DiagnosisResult(
                 device_id=device_id,
                 diagnosis_command=maintenance_type,
@@ -303,10 +351,10 @@ class FaultSystem:
                 can_skip=True  # 也可以选择跳过惩罚时间
             )
             
-            # 冻结设备
+            # 冻结设备（额外的惩罚机制）
             if device_id in self.factory_devices:
                 self.factory_devices[device_id].freeze_device(penalty_time)
-            
+        
             # 开始惩罚过程（设备保持故障状态）
             self.env.process(self._apply_penalty_process(fault, penalty_time))
         
@@ -392,33 +440,51 @@ class FaultSystem:
         """执行惩罚过程，设备保持故障状态"""
         yield self.env.timeout(penalty_time)
         
+        # 🔥 关键修复：惩罚结束后清理维修锁定
+        if fault.device_id in self.devices_under_repair:
+            del self.devices_under_repair[fault.device_id]
+        
         # 惩罚时间结束后，设备仍有故障，需要正确诊断才能修复
         print(f"[{self.env.now:.2f}] ⏱️  {fault.device_id} 惩罚时间结束，设备仍需正确诊断")
 
     def _complete_repair(self, fault: 'ActiveFault', repair_time: float, success: bool):
-        """Complete the repair process."""
+        """🔥 关键修复：完整的维修过程管理"""
+        print(f"[{self.env.now:.2f}] 🔧 开始维修 {fault.device_id}，预计时间: {repair_time:.1f}s")
+        
+        # 维修期间设备完全锁定，无法进行任何操作
         yield self.env.timeout(repair_time)
         
-        # Remove the fault
+        # 维修完成，清理所有相关状态
         if fault.device_id in self.active_faults:
             self._clear_fault(fault.device_id)
-            status = "successfully" if success else "with penalties"
-            print(f"[{self.env.now:.2f}] 🔧 Device {fault.device_id} repaired {status}")
+            
+        # 🔥 清理维修锁定
+        if fault.device_id in self.devices_under_repair:
+            del self.devices_under_repair[fault.device_id]
+            
+        status = "successfully" if success else "with penalties"
+        print(f"[{self.env.now:.2f}] ✅ Device {fault.device_id} repaired {status}")
 
     def _clear_fault(self, device_id: str):
-        """清除设备故障"""
+        """清除设备故障并恢复正常状态"""
         if device_id in self.active_faults:
             del self.active_faults[device_id]
         
         if device_id in self.factory_devices:
             device = self.factory_devices[device_id]
             device.clear_fault_effects()
+            # 🔥 恢复设备为空闲状态，使其可以正常操作
+            device.set_status(DeviceStatus.IDLE)
 
     def skip_repair_time(self, device_id: str) -> bool:
         """
         跳过修复/惩罚等待时间
         Returns True if skip was successful
         """
+        # 清理维修锁定
+        if device_id in self.devices_under_repair:
+            del self.devices_under_repair[device_id]
+            
         if device_id in self.factory_devices:
             device = self.factory_devices[device_id]
             if device.is_frozen():
@@ -430,10 +496,10 @@ class FaultSystem:
         return False
 
     def get_available_devices(self) -> List[str]:
-        """获取可以操作的设备列表（未冻结的设备）"""
+        """获取可以操作的设备列表（未冻结且未在维修的设备）"""
         available = []
         for device_id, device in self.factory_devices.items():
-            if device.can_operate():
+            if device.can_operate() and not self.is_device_under_repair(device_id):
                 available.append(device_id)
         return available
 
@@ -441,7 +507,9 @@ class FaultSystem:
         """Get statistics about fault system for KPI calculation."""
         return {
             "active_faults": len(self.active_faults),
-            "fault_devices": list(self.active_faults.keys())
+            "fault_devices": list(self.active_faults.keys()),
+            "devices_under_repair": len(self.devices_under_repair),
+            "repair_devices": list(self.devices_under_repair.keys())
         }
 
 @dataclass 

@@ -24,27 +24,27 @@ def get_layout_config():
         print(f"Warning: Failed to load configuration from YAML, using fallback: {e}")
         # Fallback to original hardcoded config if YAML loading fails
         return {
-            'path_points': {
-                'P0': (5, 20), 'P1': (12, 20), 'P2': (18, 20), 'P3': (32, 20),
-                'P4': (38, 20), 'P5': (58, 20), 'P6': (72, 20), 'P7': (78, 20),
-                'P8': (85, 20), 'P9': (10, 10)
-            },
+    'path_points': {
+        'P0': (5, 20), 'P1': (12, 20), 'P2': (18, 20), 'P3': (32, 20),
+        'P4': (38, 20), 'P5': (58, 20), 'P6': (72, 20), 'P7': (78, 20),
+        'P8': (85, 20), 'P9': (10, 10)
+    },
             'path_segments': [ 
-                ('P0', 'P1'), ('P1', 'P2'), ('P2', 'P3'), ('P3', 'P4'), ('P4', 'P5'),
-                ('P5', 'P6'), ('P6', 'P7'), ('P7', 'P8'),
-                ('P2', 'P1'), ('P1', 'P0'),
-            ],
-            'stations': [
-                {'id': 'StationA', 'position': (15, 20), 'buffer_size': 3, 'processing_times': {'P1': (30, 45), 'P2': (40, 60), 'P3': (35, 50)}},
-                {'id': 'StationB', 'position': (35, 20), 'buffer_size': 3, 'processing_times': {'P1': (45, 60), 'P2': (60, 80), 'P3': (50, 70)}},
-                {'id': 'StationC', 'position': (55, 20), 'buffer_size': 3, 'processing_times': {'P1': (20, 30), 'P2': (30, 40), 'P3': (25, 35)}},
-                {'id': 'QualityCheck', 'position': (75, 20), 'buffer_size': 2, 'processing_times': {'P1': (15, 25), 'P2': (20, 30), 'P3': (20, 30)}},
-            ],
-            'agvs': [
-                {'id': 'AGV_1', 'position': (10, 15), 'speed_mps': 2.0, 'battery_capacity': 100},
-                {'id': 'AGV_2', 'position': (10, 25), 'speed_mps': 2.0, 'battery_capacity': 100},
-            ]
-        }
+        ('P0', 'P1'), ('P1', 'P2'), ('P2', 'P3'), ('P3', 'P4'), ('P4', 'P5'),
+        ('P5', 'P6'), ('P6', 'P7'), ('P7', 'P8'),
+        ('P2', 'P1'), ('P1', 'P0'),
+    ],
+    'stations': [
+        {'id': 'StationA', 'position': (15, 20), 'buffer_size': 3, 'processing_times': {'P1': (30, 45), 'P2': (40, 60), 'P3': (35, 50)}},
+        {'id': 'StationB', 'position': (35, 20), 'buffer_size': 3, 'processing_times': {'P1': (45, 60), 'P2': (60, 80), 'P3': (50, 70)}},
+        {'id': 'StationC', 'position': (55, 20), 'buffer_size': 3, 'processing_times': {'P1': (20, 30), 'P2': (30, 40), 'P3': (25, 35)}},
+        {'id': 'QualityCheck', 'position': (75, 20), 'buffer_size': 2, 'processing_times': {'P1': (15, 25), 'P2': (20, 30), 'P3': (20, 30)}},
+    ],
+    'agvs': [
+        {'id': 'AGV_1', 'position': (10, 15), 'speed_mps': 2.0, 'battery_capacity': 100},
+        {'id': 'AGV_2', 'position': (10, 25), 'speed_mps': 2.0, 'battery_capacity': 100},
+    ]
+}
 
 # For backward compatibility, provide the same interface
 MOCK_LAYOUT_CONFIG = get_layout_config()
