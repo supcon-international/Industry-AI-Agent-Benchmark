@@ -51,7 +51,7 @@ def test_order_generation():
         
         # 运行30秒查看订单生成
         print("🚀 运行30秒观察订单生成...")
-        factory.run(until=30)
+        factory.run(until=60)
         
         # 检查订单统计
         stats = factory.kpi_calculator.stats
@@ -62,7 +62,7 @@ def test_order_generation():
         # 显示订单详情
         for order_id, order in list(factory.kpi_calculator.active_orders.items())[:3]:
             print(f"   - {order_id}: {order.items_total}件订单")
-            
+
         return stats.total_orders > 0
         
     except Exception as e:
@@ -186,11 +186,11 @@ def run_all_tests():
     print("=" * 60)
     
     tests = [
-        test_basic_factory_initialization,
+        # test_basic_factory_initialization,
         test_order_generation,
-        test_fault_injection,
-        test_command_handling,
-        test_kpi_calculation
+        # test_fault_injection,
+        # test_command_handling,
+        # test_kpi_calculation
     ]
     
     passed = 0

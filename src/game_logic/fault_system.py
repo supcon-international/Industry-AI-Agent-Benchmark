@@ -462,7 +462,7 @@ class FaultSystem:
         if fault.device_id in self.devices_under_repair:
             del self.devices_under_repair[fault.device_id]
             
-        status = "successfully" if success else "with penalties"
+            status = "successfully" if success else "with penalties"
         print(f"[{self.env.now:.2f}] ✅ Device {fault.device_id} repaired {status}")
 
     def _clear_fault(self, device_id: str):

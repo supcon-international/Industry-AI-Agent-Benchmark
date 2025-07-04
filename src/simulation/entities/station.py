@@ -1,7 +1,7 @@
 # simulation/entities/station.py
 import simpy
 import random
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional, Callable
 
 from config.schemas import DeviceStatus
 from src.simulation.entities.base import Device
@@ -17,7 +17,17 @@ class Station(Device):
         buffer_size (int): The maximum capacity of the buffer.
         processing_times (Dict[str, Tuple[int, int]]): A dictionary mapping product types
             to a tuple of (min_time, max_time) for processing.
+        product_transfer_callback (Callable): Callback function to transfer products to next station
+        product_scrap_callback (Callable): Callback function to handle scrapped products
     """
+    
+    # 默认工艺路线定义 - 产品在各工站间的流转顺序
+    DEFAULT_PROCESS_ROUTE = {
+        "P1": ["StationA", "StationB", "StationC", "QualityCheck"],
+        "P2": ["StationA", "StationB", "StationC", "QualityCheck"],  
+        "P3": ["StationA", "StationB", "StationC", "StationB", "StationC", "QualityCheck"]
+    }
+    
     def __init__(
         self,
         env: simpy.Environment,
@@ -25,11 +35,17 @@ class Station(Device):
         position: Tuple[int, int],
         buffer_size: int,
         processing_times: Dict[str, Tuple[int, int]],
+        product_transfer_callback: Optional[Callable] = None,
+        product_scrap_callback: Optional[Callable] = None,
     ):
         super().__init__(env, id, position, device_type="station")
         self.buffer_size = buffer_size
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.processing_times = processing_times
+        
+        # 产品流转回调函数
+        self.product_transfer_callback = product_transfer_callback
+        self.product_scrap_callback = product_scrap_callback
         
         # 工站特定属性初始化
         self._specific_attributes.update({
@@ -37,6 +53,14 @@ class Station(Device):
             "tool_wear_level": random.uniform(0.0, 20.0),    # 刀具磨损程度
             "lubricant_level": random.uniform(80.0, 100.0)   # 润滑油水平
         })
+        
+        # 统计数据
+        self.stats = {
+            "products_processed": 0,
+            "products_scrapped": 0,
+            "total_processing_time": 0.0,
+            "average_processing_time": 0.0
+        }
         
         # Start the main operational process for the station
         self.env.process(self.run())
@@ -58,45 +82,155 @@ class Station(Device):
 
     def process_product(self, product):
         """Simulates the time taken to process a single product."""
-        # 检查设备状态
+        # Check if the device can operate
         if not self.can_operate():
             print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
-            # 将产品放回缓冲区
+            # Put the product back into the buffer
             yield self.buffer.put(product)
             return
             
         self.set_status(DeviceStatus.PROCESSING)
         
+        # Record processing start
+        product.process_at_station(self.id, self.env.now)
+        
         # Get processing time based on product type
         min_time, max_time = self.processing_times.get(product.product_type, (10, 20)) # Default time
         processing_time = random.uniform(min_time, max_time)
         
-        # 应用效率影响
+        # Apply efficiency impact
         efficiency_factor = self.performance_metrics.efficiency_rate / 100.0
         actual_processing_time = processing_time / efficiency_factor
         
-        # 如果有故障，可能影响处理时间
+        # If there is a fault, it may affect the processing time
         if self.has_fault:
-            actual_processing_time *= random.uniform(1.2, 2.0)  # 故障时处理时间增加
+            actual_processing_time *= random.uniform(1.2, 2.0)  # The processing time increases when there is a fault
         
         yield self.env.timeout(actual_processing_time)
         
-        # 检查是否因精度问题导致产品质量问题
+        # Update statistics
+        self.stats["products_processed"] += 1
+        self.stats["total_processing_time"] += actual_processing_time
+        self.stats["average_processing_time"] = (
+            self.stats["total_processing_time"] / self.stats["products_processed"]
+        )
+        
+        # Check if the product is defective due to precision problem
         precision_level = self._specific_attributes.get("precision_level", 100.0)
         if precision_level < 80.0:
-            # 精度过低，可能导致产品报废
+            # Precision is too low, which may cause the product to be scrapped
             scrap_chance = (80.0 - precision_level) / 80.0
             if random.random() < scrap_chance:
-                print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因精度问题报废")
-                # 产品报废，不传递到下一步
+                yield self.env.process(self._handle_product_scrap(product, "precision_issue"))
                 self.set_status(DeviceStatus.IDLE)
                 return
         
-        # For now, we'll just say the product is done.
-        # Later, this will trigger moving the product to the next stage.
+        # Product processing completed successfully
         print(f"[{self.env.now:.2f}] {self.id}: Finished processing product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
-        self.set_status(DeviceStatus.IDLE) 
         
+        # Trigger moving the product to the next stage
+        yield self.env.process(self._transfer_product_to_next_stage(product))
+        
+        self.set_status(DeviceStatus.IDLE) 
+
+    def _handle_product_scrap(self, product, reason: str):
+        """Handle product scrapping due to quality issues"""
+        from src.simulation.entities.product import QualityStatus, QualityDefect, DefectType
+        
+        # Set product status to scrapped
+        product.quality_status = QualityStatus.SCRAP
+        
+        # Add defect record
+        defect = QualityDefect(
+            defect_type=DefectType.DIMENSIONAL,  # Use DIMENSIONAL for precision issues
+            severity=90.0,  # High severity for scrapped products
+            description=f"Product scrapped at {self.id} due to {reason}",
+            station_id=self.id,
+            detected_at=self.env.now
+        )
+        product.add_defect(defect)
+        
+        # Update statistics
+        self.stats["products_scrapped"] += 1
+        
+        print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因{reason}报废")
+        
+        # Notify factory about scrapped product (for KPI tracking)
+        if self.product_scrap_callback:
+            yield self.env.process(self.product_scrap_callback(product, self.id, reason))
+        
+        # Simulate scrap handling time
+        yield self.env.timeout(2.0)
+
+    def _transfer_product_to_next_stage(self, product):
+        """Transfer the processed product to the next station in the route"""
+        try:
+            # Get the process route for this product type
+            route = self.DEFAULT_PROCESS_ROUTE.get(product.product_type, [])
+            
+            if not route:
+                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 未找到产品类型 {product.product_type} 的工艺路线")
+                return
+            
+            # Find current station index in the route
+            try:
+                current_index = route.index(self.id)
+            except ValueError:
+                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 当前工站不在产品 {product.id} 的工艺路线中")
+                return
+            
+            # Check if this is the last station in the route
+            if current_index >= len(route) - 1:
+                print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 完成全部工艺流程")
+                return
+            
+            # Get next station in the route
+            next_station_id = route[current_index + 1]
+            
+            print(f"[{self.env.now:.2f}] 🔄 {self.id}: 准备将产品 {product.id} 转移到 {next_station_id}")
+            
+            # Use callback to request product transfer via AGV
+            if self.product_transfer_callback:
+                yield self.env.process(
+                    self.product_transfer_callback(product, self.id, next_station_id)
+                )
+            else:
+                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 缺少产品转移回调函数，无法转移产品")
+                
+        except Exception as e:
+            print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品转移失败: {e}")
+
+    def add_product_to_buffer(self, product):
+        """Add a product to the station's buffer (used by AGV for delivery)"""
+        if len(self.buffer.items) >= self.buffer_size:
+            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 缓冲区已满，无法接收产品 {product.id}")
+            return False
+        
+        self.buffer.put(product)
+        print(f"[{self.env.now:.2f}] 📦 {self.id}: 接收产品 {product.id} 到缓冲区")
+        return True
+
     def get_buffer_level(self) -> int:
         """获取当前缓冲区产品数量"""
-        return len(self.buffer.items) 
+        return len(self.buffer.items)
+
+    def get_processing_stats(self) -> Dict:
+        """获取工站处理统计信息"""
+        return {
+            **self.stats,
+            "buffer_level": self.get_buffer_level(),
+            "buffer_utilization": self.get_buffer_level() / self.buffer_size,
+            "precision_level": self._specific_attributes.get("precision_level", 100.0),
+            "tool_wear_level": self._specific_attributes.get("tool_wear_level", 0.0),
+            "can_operate": self.can_operate()
+        }
+
+    def reset_stats(self):
+        """重置统计数据"""
+        self.stats = {
+            "products_processed": 0,
+            "products_scrapped": 0,
+            "total_processing_time": 0.0,
+            "average_processing_time": 0.0
+        }
+    

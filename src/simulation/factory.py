@@ -1,10 +1,11 @@
 # src/simulation/factory.py
 import simpy
 import random
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from src.simulation.entities.station import Station
 from src.simulation.entities.agv import AGV
+from src.simulation.entities.quality_checker import QualityChecker
 from src.game_logic.order_generator import OrderGenerator
 from src.game_logic.fault_system import FaultSystem
 from src.game_logic.kpi_calculator import KPICalculator
@@ -22,29 +23,6 @@ def get_layout_config():
         return get_legacy_layout_config()
     except Exception as e:
         print(f"Warning: Failed to load configuration from YAML, using fallback: {e}")
-        # Fallback to original hardcoded config if YAML loading fails
-        return {
-    'path_points': {
-        'P0': (5, 20), 'P1': (12, 20), 'P2': (18, 20), 'P3': (32, 20),
-        'P4': (38, 20), 'P5': (58, 20), 'P6': (72, 20), 'P7': (78, 20),
-        'P8': (85, 20), 'P9': (10, 10)
-    },
-            'path_segments': [ 
-        ('P0', 'P1'), ('P1', 'P2'), ('P2', 'P3'), ('P3', 'P4'), ('P4', 'P5'),
-        ('P5', 'P6'), ('P6', 'P7'), ('P7', 'P8'),
-        ('P2', 'P1'), ('P1', 'P0'),
-    ],
-    'stations': [
-        {'id': 'StationA', 'position': (15, 20), 'buffer_size': 3, 'processing_times': {'P1': (30, 45), 'P2': (40, 60), 'P3': (35, 50)}},
-        {'id': 'StationB', 'position': (35, 20), 'buffer_size': 3, 'processing_times': {'P1': (45, 60), 'P2': (60, 80), 'P3': (50, 70)}},
-        {'id': 'StationC', 'position': (55, 20), 'buffer_size': 3, 'processing_times': {'P1': (20, 30), 'P2': (30, 40), 'P3': (25, 35)}},
-        {'id': 'QualityCheck', 'position': (75, 20), 'buffer_size': 2, 'processing_times': {'P1': (15, 25), 'P2': (20, 30), 'P3': (20, 30)}},
-    ],
-    'agvs': [
-        {'id': 'AGV_1', 'position': (10, 15), 'speed_mps': 2.0, 'battery_capacity': 100},
-        {'id': 'AGV_2', 'position': (10, 25), 'speed_mps': 2.0, 'battery_capacity': 100},
-    ]
-}
 
 # For backward compatibility, provide the same interface
 MOCK_LAYOUT_CONFIG = get_layout_config()
@@ -64,6 +42,16 @@ class Factory:
         # Resources for AGV path collision avoidance
         self.path_points = self.layout['path_points']
         self.path_resources: Dict[str, simpy.Resource] = {}
+        
+        # AGV task queue for product transportation
+        self.agv_task_queue = simpy.Store(self.env)
+        
+        # Statistics for scrapped products
+        self.scrap_stats = {
+            "total_scrapped": 0,
+            "scrap_by_station": {},
+            "scrap_reasons": {}
+        }
         
         # Create devices first
         self._create_devices()
@@ -89,11 +77,33 @@ class Factory:
         # Start Unity real-time publishing (high frequency updates)
         self.unity_publisher = RealTimePublisher(self.env, self.mqtt_client, self)
         print(f"[{self.env.now:.2f}] 🎮 Unity real-time publisher initialized (100ms AGV updates)")
+        
+        # Start AGV dispatcher
+        self.env.process(self._agv_dispatcher())
 
     def _create_devices(self):
         """Instantiates all devices based on the layout configuration."""
         for station_cfg in self.layout['stations']:
-            station = Station(self.env, **station_cfg)
+            # 🔍 特殊处理QualityCheck工站，使用QualityChecker类
+            if station_cfg['id'] == 'QualityCheck':
+                station = QualityChecker(
+                    env=self.env,
+                    id=station_cfg['id'],
+                    position=station_cfg['position'],
+                    buffer_size=station_cfg['buffer_size'],
+                    processing_times=station_cfg['processing_times']
+                )
+                print(f"[{self.env.now:.2f}] 🔍 Created QualityChecker: {station_cfg['id']}")
+            else:
+                # 创建普通工站，传入回调函数
+                station = Station(
+                    env=self.env,
+                    product_transfer_callback=self._handle_product_transfer,
+                    product_scrap_callback=self._handle_product_scrap,
+                    **station_cfg
+                )
+                print(f"[{self.env.now:.2f}] 🏭 Created Station: {station_cfg['id']}")
+                
             self.stations[station.id] = station
             
         for agv_cfg in self.layout['agvs']:
@@ -103,6 +113,173 @@ class Factory:
             
             agv = AGV(self.env, **agv_cfg)
             self.agvs[agv.id] = agv
+            print(f"[{self.env.now:.2f}] 🚛 Created AGV: {agv_cfg['id']}")
+
+    def _handle_product_transfer(self, product, from_station_id: str, to_station_id: str):
+        """Handle product transfer request from station - schedule AGV transport"""
+        try:
+            # Create transport task
+            transport_task = {
+                "type": "transport",
+                "product": product,
+                "from_station": from_station_id,
+                "to_station": to_station_id,
+                "timestamp": self.env.now,
+                "priority": self._get_transport_priority(product, to_station_id)
+            }
+            
+            # Add to AGV task queue
+            yield self.agv_task_queue.put(transport_task)
+            print(f"[{self.env.now:.2f}] 📋 Factory: 已安排AGV运输任务 - {product.id} 从 {from_station_id} 到 {to_station_id}")
+            
+        except Exception as e:
+            print(f"[{self.env.now:.2f}] ❌ Factory: 产品转移任务创建失败: {e}")
+
+    def _handle_product_scrap(self, product, station_id: str, reason: str):
+        """Handle product scrapping notification - update statistics and KPIs"""
+        try:
+            # Update scrap statistics
+            self.scrap_stats["total_scrapped"] += 1
+            
+            if station_id not in self.scrap_stats["scrap_by_station"]:
+                self.scrap_stats["scrap_by_station"][station_id] = 0
+            self.scrap_stats["scrap_by_station"][station_id] += 1
+            
+            if reason not in self.scrap_stats["scrap_reasons"]:
+                self.scrap_stats["scrap_reasons"][reason] = 0
+            self.scrap_stats["scrap_reasons"][reason] += 1
+            
+            # Notify KPI calculator about scrapped product (if method exists)
+            # Note: register_scrapped_product method may not be implemented yet
+            # if hasattr(self.kpi_calculator, 'register_scrapped_product'):
+            #     self.kpi_calculator.register_scrapped_product(product, station_id, reason)
+            
+            # Publish scrap event to MQTT for Unity visualization
+            scrap_event = {
+                "timestamp": self.env.now,
+                "product_id": product.id,
+                "product_type": product.product_type,
+                "station_id": station_id,
+                "reason": reason,
+                "total_scrapped": self.scrap_stats["total_scrapped"]
+            }
+            
+            import json
+            topic = f"factory/events/product_scrapped"
+            self.mqtt_client.publish(topic, json.dumps(scrap_event))
+            
+            print(f"[{self.env.now:.2f}] 📊 Factory: 产品报废统计已更新 - 总计: {self.scrap_stats['total_scrapped']}")
+            
+        except Exception as e:
+            print(f"[{self.env.now:.2f}] ❌ Factory: 产品报废处理失败: {e}")
+        
+        # Simulate scrap processing time
+        yield self.env.timeout(1.0)
+
+    def _get_transport_priority(self, product, to_station_id: str) -> int:
+        """Calculate transport priority based on product and destination"""
+        priority = 5  # Default priority
+        
+        # Higher priority for quality check station
+        if to_station_id == "QualityCheck":
+            priority = 3
+        
+        # Higher priority for rework products
+        if product.rework_count > 0:
+            priority = 2
+        
+        # Highest priority for urgent orders (if implemented)
+        # if hasattr(product, 'urgent') and product.urgent:
+        #     priority = 1
+        
+        return priority
+
+    def _agv_dispatcher(self):
+        """AGV dispatcher that assigns transport tasks to available AGVs"""
+        while True:
+            try:
+                # Wait for a transport task
+                task = yield self.agv_task_queue.get()
+                
+                # Find an available AGV
+                available_agv = self._find_available_agv()
+                
+                if available_agv:
+                    # Assign the task to the AGV
+                    self.env.process(self._execute_transport_task(available_agv, task))
+                else:
+                    # No AGV available, put task back in queue
+                    print(f"[{self.env.now:.2f}] ⏳ AGV Dispatcher: 无可用AGV，任务重新排队")
+                    yield self.agv_task_queue.put(task)
+                    yield self.env.timeout(5.0)  # Wait before retrying
+                    
+            except Exception as e:
+                print(f"[{self.env.now:.2f}] ❌ AGV Dispatcher: 调度失败: {e}")
+                yield self.env.timeout(1.0)
+
+    def _find_available_agv(self) -> Optional[str]:
+        """Find an available AGV for transport task"""
+        for agv_id, agv in self.agvs.items():
+            if agv.status.value == "idle" and len(agv.payload) == 0:
+                return agv_id
+        return None
+
+    def _execute_transport_task(self, agv_id: str, task: Dict):
+        """Execute a product transport task with the assigned AGV"""
+        try:
+            agv = self.agvs[agv_id]
+            product = task["product"]
+            from_station_id = task["from_station"]
+            to_station_id = task["to_station"]
+            
+            from_station = self.stations[from_station_id]
+            to_station = self.stations[to_station_id]
+            
+            print(f"[{self.env.now:.2f}] 🚛 {agv_id}: 开始执行运输任务 - {product.id}")
+            
+            # Step 1: Move AGV to pickup station
+            pickup_point = self._get_station_pickup_point(from_station_id)
+            if agv.position != pickup_point:
+                yield self.env.process(self._move_agv_to_position(agv_id, pickup_point))
+            
+            # Step 2: Load product from station
+            agv.load_product(product)
+            product.add_history(self.env.now, f"Loaded onto {agv_id} at {from_station_id}")
+            yield self.env.timeout(3.0)  # Loading time
+            
+            # Step 3: Move AGV to destination station
+            delivery_point = self._get_station_pickup_point(to_station_id)
+            yield self.env.process(self._move_agv_to_position(agv_id, delivery_point))
+            
+            # Step 4: Unload product to destination station
+            unloaded_product = agv.unload_product(product.id)
+            if unloaded_product and to_station.add_product_to_buffer(unloaded_product):
+                product.add_history(self.env.now, f"Delivered to {to_station_id} by {agv_id}")
+                print(f"[{self.env.now:.2f}] ✅ {agv_id}: 成功运输产品 {product.id} 到 {to_station_id}")
+            else:
+                print(f"[{self.env.now:.2f}] ❌ {agv_id}: 无法将产品 {product.id} 交付到 {to_station_id}")
+            
+            yield self.env.timeout(2.0)  # Unloading time
+            
+        except Exception as e:
+            print(f"[{self.env.now:.2f}] ❌ {agv_id}: 运输任务执行失败: {e}")
+
+    def _get_station_pickup_point(self, station_id: str) -> Tuple[int, int]:
+        """Get the pickup/delivery point for a station"""
+        # For now, use station position directly
+        # In a more complex system, this would return nearby path points
+        station = self.stations.get(station_id)
+        if station:
+            return station.position
+        return (0, 0)
+
+    def _move_agv_to_position(self, agv_id: str, target_position: Tuple[int, int]):
+        """Move AGV to a specific position using the path system"""
+        agv = self.agvs[agv_id]
+        
+        # For now, move directly to position
+        # In a more complex system, this would use pathfinding
+        yield self.env.process(agv.move_to(target_position, self.path_points))
 
     def _create_path_resources(self):
         """Creates a SimPy resource for each path segment to manage access."""
@@ -374,6 +551,31 @@ class Factory:
         print(f"--- Active processes: Order Gen, Fault Injection, KPI Updates, MQTT Publishing ---")
         self.env.run(until=until)
         print("--- Factory simulation finished ---")
+
+    def get_factory_stats(self) -> Dict:
+        """Get comprehensive factory statistics"""
+        station_stats = {}
+        for station_id, station in self.stations.items():
+            if hasattr(station, 'get_processing_stats'):
+                station_stats[station_id] = station.get_processing_stats()
+        
+        agv_stats = {}
+        for agv_id, agv in self.agvs.items():
+            agv_stats[agv_id] = {
+                "status": agv.status.value,
+                "position": agv.position,
+                "battery_level": getattr(agv, 'battery_level', 100.0),
+                "payload_count": len(agv.payload)
+            }
+        
+        return {
+            "timestamp": self.env.now,
+            "stations": station_stats,
+            "agvs": agv_stats,
+            "scrap_stats": self.scrap_stats,
+            "total_devices": len(self.all_devices),
+            "active_transport_tasks": len(self.agv_task_queue.items)
+        }
 
 
 # Example of how to run the factory simulation

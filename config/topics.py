@@ -4,6 +4,7 @@
 # Device status topics (published by factory devices)
 STATION_STATUS_TOPIC = "factory/station/{device_id}/status"
 AGV_STATUS_TOPIC = "factory/resource/{device_id}/status"
+QUALITY_CHECKER_STATUS_TOPIC = "factory/quality/{device_id}/status"
 FACTORY_STATUS_TOPIC = "factory/status"
 
 # Order and KPI topics
@@ -24,6 +25,7 @@ ALL_FACTORY_TOPICS = "factory/+"
 # Legacy topic definitions (keeping for backward compatibility)
 FACTORY_STATUS_TOPIC_PREFIX = "factory/station"
 AGV_STATUS_TOPIC_PREFIX = "factory/resource"
+QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "factory/quality"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
@@ -33,3 +35,7 @@ def get_station_status_topic(station_id: str) -> str:
 def get_agv_status_topic(agv_id: str) -> str:
     """Returns the status topic for a specific AGV."""
     return f"{AGV_STATUS_TOPIC_PREFIX}/{agv_id}/status" 
+
+def get_quality_checker_status_topic(quality_checker_id: str) -> str:
+    """Returns the status topic for a specific quality checker."""
+    return f"{QUALITY_CHECKER_STATUS_TOPIC_PREFIX}/{quality_checker_id}/status"
