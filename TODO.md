@@ -265,12 +265,12 @@ uv run test/run_tests.py
 **文档完整性**: 精简且完整的使用指南
 
 # 7.4:
-1. Quality Checker derermine 残次品，发送unity前端（直接舍弃 or 返回重新加工）
-2. test mqtt topic
+✅ 1. Quality Checker derermine 残次品，发送unity前端（直接舍弃 or 返回重新加工
+✅ 2. test mqtt topic
 3. 维持一系列变量来对应系统状态（正常状态也非恒定），维护动作与变量变化的映射，agent学习采取动作来让变量趋紧当前产品周期的正确变量值
 4. 设置两条AGV路径，平行不相交
 5. refine KPI Calculation
 
 # 7.5
-1. 产线设计，同步加工3个产品，实现不同产品的逻辑产线
+✅ 1. 产线设计，同步加工3个产品，实现不同产品的逻辑产线
 2. P3产品的出料设置2队列进行存放storage，若满就报故障，将产线停掉

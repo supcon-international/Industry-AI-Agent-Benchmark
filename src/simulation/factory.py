@@ -537,20 +537,20 @@ class Factory:
 
     def run(self, until: int):
         """Runs the simulation for a given duration."""
-        print(f"--- Factory simulation starting for {until} seconds ---")
-        print(f"--- Available devices: {', '.join(self.all_devices.keys())} ---")
-        print(f"--- Use 'inspect_device', 'skip_repair_time', 'request_maintenance' commands ---")
-        
+        # print(f"--- Factory simulation starting for {until} seconds ---")
+        # print(f"--- Available devices: {', '.join(self.all_devices.keys())} ---")
+        # print(f"--- Use 'inspect_device', 'skip_repair_time', 'request_maintenance' commands ---")
+        """
         # Core simulation processes are already started in __init__:
         # - Order generation: self.order_generator.run() (auto-started)
         # - Fault injection: self.fault_system.run_fault_injection() (auto-started) 
         # - KPI updates: self.kpi_calculator.run_kpi_updates() (auto-started)
         # - MQTT publishing: self._start_status_publishing() (started in __init__)
         # - State evolution: self.state_space_manager._evolve_states() (auto-started)
-        
-        print(f"--- Active processes: Order Gen, Fault Injection, KPI Updates, MQTT Publishing ---")
+        """
+        # print(f"--- Active processes: Order Gen, Fault Injection, KPI Updates, MQTT Publishing ---")
         self.env.run(until=until)
-        print("--- Factory simulation finished ---")
+        # print("--- Factory simulation finished ---")
 
     def get_factory_stats(self) -> Dict:
         """Get comprehensive factory statistics"""

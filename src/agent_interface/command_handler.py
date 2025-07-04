@@ -3,8 +3,8 @@ import json
 import logging
 from typing import Dict, Any
 
-from config.schemas import AgentCommand
-from config.topics import AGENT_COMMANDS_TOPIC
+from config.schemas import AgentCommand, SystemResponse
+from config.topics import AGENT_COMMANDS_TOPIC, AGENT_RESPONSES_TOPIC
 from src.utils.mqtt_client import MQTTClient
 
 logger = logging.getLogger(__name__)
@@ -47,21 +47,24 @@ class CommandHandler:
             # Route the command to the appropriate handler
             self._execute_command(command)
             
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON command: {e}")
         except Exception as e:
-            logger.error(f"Failed to process command: {e}")
+            msg = f"Failed to process command: {e}"
+            logger.error(msg)
+            payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, payload)
 
     def _execute_command(self, command: AgentCommand):
         """
         Executes a validated command by calling the appropriate factory method.
         """
         action = command.action
-        target = command.target
         params = command.params
+        target = command.target
         
         try:
-            if action == "move_agv":
+            if action == "test_command":
+                self._handle_test_command(target, params)
+            elif action == "move_agv":
                 self._handle_move_agv(target, params)
             elif action == "request_maintenance":
                 self._handle_request_maintenance(target, params)
@@ -81,7 +84,15 @@ class CommandHandler:
                 logger.warning(f"Unknown action: {action}")
                 
         except Exception as e:
-            logger.error(f"Failed to execute command {action} on {target}: {e}")
+            logger.error(f"Failed to execute command {action}: {e}")
+
+    def _handle_test_command(self, target: str, params: Dict[str, Any]):
+        """Handle test MQTT commands."""
+        msg = f"Received MQTT test command to {target} with params: {json.dumps(params)}"
+        logger.info(msg)
+        payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
+        self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, payload)
+        return True
 
     def _handle_move_agv(self, agv_id: str, params: Dict[str, Any]):
         """Handle AGV movement commands."""

@@ -149,8 +149,8 @@ class FactorySimulation:
                 # Run simulation in real-time
                 while self.running:
                     # Run simulation for 1 second at a time
-                    self.factory.env.run(until=self.factory.env.now + 1.0)
-                    time.sleep(0.1)  # Small delay to prevent busy waiting
+                    self.factory.run(until=self.factory.env.now + 1.0)
+                    time.sleep(2)  # Small delay to prevent busy waiting
                     
         except KeyboardInterrupt:
             logger.info("🛑 Simulation interrupted by user")

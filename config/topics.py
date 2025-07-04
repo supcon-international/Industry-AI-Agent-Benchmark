@@ -13,6 +13,8 @@ KPI_UPDATE_TOPIC = "factory/kpi/update"
 
 # Agent command topics (published by AI agents)
 AGENT_COMMANDS_TOPIC = "factory/agent/commands"
+# Agent response topics (subscribed by AI agents)
+AGENT_RESPONSES_TOPIC = "factory/agent/responses"
 
 # Natural language logs for visualization
 NL_LOGS_TOPIC = "factory/agent/nl_logs"
@@ -30,7 +32,6 @@ QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "factory/quality"
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
     return f"{FACTORY_STATUS_TOPIC_PREFIX}/{station_id}/status"
-
 
 def get_agv_status_topic(agv_id: str) -> str:
     """Returns the status topic for a specific AGV."""
