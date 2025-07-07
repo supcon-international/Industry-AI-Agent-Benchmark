@@ -12,6 +12,7 @@ from src.game_logic.kpi_calculator import KPICalculator
 from src.game_logic.state_space_manager import ComplexStateSpaceManager
 from src.utils.mqtt_client import MQTTClient
 from src.unity_interface.real_time_publisher import RealTimePublisher
+from src.simulation.entities.conveyor import Conveyor, DualBufferConveyor
 
 # Import configuration loader
 from src.utils.config_loader import get_legacy_layout_config
@@ -53,6 +54,10 @@ class Factory:
             "scrap_reasons": {}
         }
         
+        self.conveyor_ab = Conveyor(capacity=5)  # A→B
+        self.conveyor_bc = Conveyor(capacity=5)  # B→C
+        self.conveyor_cq = DualBufferConveyor(capacity1=3, capacity2=3)  # C→QualityCheck
+        
         # Create devices first
         self._create_devices()
         self._create_path_resources()
@@ -80,6 +85,8 @@ class Factory:
         
         # Start AGV dispatcher
         self.env.process(self._agv_dispatcher())
+        
+        self._bind_conveyors_to_stations()
 
     def _create_devices(self):
         """Instantiates all devices based on the layout configuration."""
@@ -576,6 +583,18 @@ class Factory:
             "total_devices": len(self.all_devices),
             "active_transport_tasks": len(self.agv_task_queue.items)
         }
+
+    def _bind_conveyors_to_stations(self):
+        """Bind conveyors to stations according to the process flow."""
+        # StationA → conveyor_ab
+        if 'StationA' in self.stations:
+            self.stations['StationA'].downstream_conveyor = self.conveyor_ab
+        # StationB → conveyor_bc
+        if 'StationB' in self.stations:
+            self.stations['StationB'].downstream_conveyor = self.conveyor_bc
+        # StationC → conveyor_cq (DualBufferConveyor)
+        if 'StationC' in self.stations:
+            self.stations['StationC'].downstream_conveyor = self.conveyor_cq
 
 
 # Example of how to run the factory simulation

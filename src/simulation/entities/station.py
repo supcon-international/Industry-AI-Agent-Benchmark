@@ -19,6 +19,7 @@ class Station(Device):
             to a tuple of (min_time, max_time) for processing.
         product_transfer_callback (Callable): Callback function to transfer products to next station
         product_scrap_callback (Callable): Callback function to handle scrapped products
+        downstream_conveyor (Conveyor): The conveyor downstream from this station
     """
     
     # 默认工艺路线定义 - 产品在各工站间的流转顺序
@@ -37,6 +38,7 @@ class Station(Device):
         processing_times: Dict[str, Tuple[int, int]],
         product_transfer_callback: Optional[Callable] = None,
         product_scrap_callback: Optional[Callable] = None,
+        downstream_conveyor=None,
     ):
         super().__init__(env, id, position, device_type="station")
         self.buffer_size = buffer_size
@@ -61,6 +63,8 @@ class Station(Device):
             "total_processing_time": 0.0,
             "average_processing_time": 0.0
         }
+        
+        self.downstream_conveyor = downstream_conveyor
         
         # Start the main operational process for the station
         self.env.process(self.run())
@@ -163,7 +167,27 @@ class Station(Device):
         yield self.env.timeout(2.0)
 
     def _transfer_product_to_next_stage(self, product):
-        """Transfer the processed product to the next station in the route"""
+        """Transfer the processed product to the next station or conveyor."""
+        from src.simulation.entities.conveyor import DualBufferConveyor
+        if isinstance(self.downstream_conveyor, DualBufferConveyor):
+            while self.downstream_conveyor.is_full(1) and self.downstream_conveyor.is_full(2):
+                print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both buffers of downstream conveyor full, waiting...")
+                yield self.env.timeout(2.0)
+            # 选择产品数最少的buffer
+            if self.downstream_conveyor.is_full(1):
+                chosen_buffer = 2
+            elif self.downstream_conveyor.is_full(2):
+                chosen_buffer = 1
+            else:
+                # 两个都不满，选产品数更少的
+                if len(self.downstream_conveyor.buffer1) <= len(self.downstream_conveyor.buffer2):
+                    chosen_buffer = 1
+                else:
+                    chosen_buffer = 2
+            self.downstream_conveyor.push(product, buffer_index=chosen_buffer)
+            print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream buffer{chosen_buffer}")
+            return
+        
         try:
             # Get the process route for this product type
             route = self.DEFAULT_PROCESS_ROUTE.get(product.product_type, [])
