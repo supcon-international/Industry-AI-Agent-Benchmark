@@ -12,7 +12,7 @@ from src.game_logic.kpi_calculator import KPICalculator
 from src.game_logic.state_space_manager import ComplexStateSpaceManager
 from src.utils.mqtt_client import MQTTClient
 from src.unity_interface.real_time_publisher import RealTimePublisher
-from src.simulation.entities.conveyor import Conveyor, DualBufferConveyor
+from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
 
 # Import configuration loader
 from src.utils.config_loader import get_legacy_layout_config
@@ -54,9 +54,9 @@ class Factory:
             "scrap_reasons": {}
         }
         
-        self.conveyor_ab = Conveyor(capacity=5)  # A→B
-        self.conveyor_bc = Conveyor(capacity=5)  # B→C
-        self.conveyor_cq = DualBufferConveyor(capacity1=3, capacity2=3)  # C→QualityCheck
+        self.conveyor_ab = Conveyor(self.env, capacity=5)  # A→B
+        self.conveyor_bc = Conveyor(self.env, capacity=5)  # B→C
+        self.conveyor_cq = TripleBufferConveyor(self.env, main_capacity=5, upper_capacity=3, lower_capacity=3)  # C→QualityCheck
         
         # Create devices first
         self._create_devices()
@@ -87,6 +87,7 @@ class Factory:
         self.env.process(self._agv_dispatcher())
         
         self._bind_conveyors_to_stations()
+        self._setup_conveyor_downstreams()
 
     def _create_devices(self):
         """Instantiates all devices based on the layout configuration."""
@@ -592,9 +593,21 @@ class Factory:
         # StationB → conveyor_bc
         if 'StationB' in self.stations:
             self.stations['StationB'].downstream_conveyor = self.conveyor_bc
-        # StationC → conveyor_cq (DualBufferConveyor)
+        # StationC → conveyor_cq (TripleBufferConveyor)
         if 'StationC' in self.stations:
             self.stations['StationC'].downstream_conveyor = self.conveyor_cq
+
+    def _setup_conveyor_downstreams(self):
+        """Set downstream stations for conveyors to enable auto-transfer."""
+        # conveyor_ab → StationB
+        if 'StationB' in self.stations:
+            self.conveyor_ab.set_downstream_station(self.stations['StationB'])
+        # conveyor_bc → StationC
+        if 'StationC' in self.stations:
+            self.conveyor_bc.set_downstream_station(self.stations['StationC'])
+        # conveyor_cq → QualityCheck
+        if 'QualityCheck' in self.stations:
+            self.conveyor_cq.set_downstream_station(self.stations['QualityCheck'])
 
 
 # Example of how to run the factory simulation

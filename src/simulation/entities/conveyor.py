@@ -1,100 +1,129 @@
+import simpy
+
 class Conveyor:
     """
     Conveyor with limited capacity, simulating a production line conveyor belt.
+    Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, capacity):
-        """Initialize conveyor with given capacity."""
+    def __init__(self, env, capacity):
+        self.env = env
         self.capacity = capacity
-        self.queue = []
+        self.store = simpy.Store(env, capacity=capacity)
+        self.downstream_station = None  # 下游工站引用
+        self._auto_transfer_proc = None
+
+    def set_downstream_station(self, station):
+        """Set the downstream station for auto-transfer."""
+        self.downstream_station = station
+        if self._auto_transfer_proc is None:
+            self._auto_transfer_proc = self.env.process(self.run())
 
     def push(self, product):
-        """Add a product to the conveyor. Return True if successful, False if full."""
-        if len(self.queue) < self.capacity:
-            self.queue.append(product)
-            return True
-        return False
+        """Put a product on the conveyor (may block if full)."""
+        return self.store.put(product)
 
     def pop(self):
-        """Remove and return the first product from the conveyor. Return None if empty."""
-        if self.queue:
-            return self.queue.pop(0)
-        return None
+        """Remove and return a product from the conveyor (may block if empty)."""
+        return self.store.get()
 
     def is_full(self):
-        """Check if the conveyor is full."""
-        return len(self.queue) >= self.capacity
+        return len(self.store.items) >= self.capacity
 
     def is_empty(self):
-        """Check if the conveyor is empty."""
-        return len(self.queue) == 0
+        return len(self.store.items) == 0
 
     def peek(self):
-        """Return the first product without removing it. Return None if empty."""
-        if self.queue:
-            return self.queue[0]
+        if self.store.items:
+            return self.store.items[0]
         return None
 
-class DualBufferConveyor(Conveyor):
+    def run(self):
+        """Auto-transfer products to downstream station's buffer if possible."""
+        while True:
+            if self.downstream_station is not None:
+                # Only transfer if both conveyor and downstream buffer are not empty/full
+                if self.store.items and self.downstream_station.buffer.level < self.downstream_station.buffer_size:
+                    product = yield self.store.get()
+                    yield self.downstream_station.buffer.put(product)
+                    print(f"[{self.env.now:.2f}] Conveyor: moved product to {self.downstream_station.id}")
+                else:
+                    yield self.env.timeout(1.0)
+            else:
+                yield self.env.timeout(1.0)
+
+class TripleBufferConveyor:
     """
-    Conveyor with two independent buffers, allowing parallel AGV operations.
+    Conveyor with three buffers:
+    - main_buffer: for direct transfer to QualityCheck (auto-transfer)
+    - upper_buffer: for P3 products, AGV pickup
+    - lower_buffer: for P3 products, AGV pickup
+    All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, capacity1, capacity2):
-        # 不使用父类的self.queue，改为两个独立buffer
-        self.capacity1 = capacity1
-        self.capacity2 = capacity2
-        self.buffer1 = []
-        self.buffer2 = []
+    def __init__(self, env, main_capacity, upper_capacity, lower_capacity):
+        self.env = env
+        self.main_buffer = simpy.Store(env, capacity=main_capacity)
+        self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
+        self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
+        self.downstream_station = None  # QualityCheck
+        self._auto_transfer_proc = None
 
-    def push(self, product, buffer_index=1):
-        """Push product to specified buffer (1 or 2). Return True if successful, False if full."""
-        if buffer_index == 1:
-            if len(self.buffer1) < self.capacity1:
-                self.buffer1.append(product)
-                return True
-            return False
-        elif buffer_index == 2:
-            if len(self.buffer2) < self.capacity2:
-                self.buffer2.append(product)
-                return True
-            return False
+    def set_downstream_station(self, station):
+        """Set the downstream station for auto-transfer from main_buffer."""
+        self.downstream_station = station
+        if self._auto_transfer_proc is None:
+            self._auto_transfer_proc = self.env.process(self.run())
+
+    def push(self, product, buffer_type="main"):
+        """Put product into specified buffer. buffer_type: 'main', 'upper', 'lower'."""
+        if buffer_type == "main":
+            return self.main_buffer.put(product)
+        elif buffer_type == "upper":
+            return self.upper_buffer.put(product)
+        elif buffer_type == "lower":
+            return self.lower_buffer.put(product)
         else:
-            raise ValueError("buffer_index must be 1 or 2")
+            raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
 
-    def pop(self, buffer_index=1):
-        """Pop product from specified buffer (1 or 2). Return product or None if empty."""
-        if buffer_index == 1:
-            if self.buffer1:
-                return self.buffer1.pop(0)
-            return None
-        elif buffer_index == 2:
-            if self.buffer2:
-                return self.buffer2.pop(0)
-            return None
+    def pop(self, buffer_type="main"):
+        """Get product from specified buffer."""
+        if buffer_type == "main":
+            return self.main_buffer.get()
+        elif buffer_type == "upper":
+            return self.upper_buffer.get()
+        elif buffer_type == "lower":
+            return self.lower_buffer.get()
         else:
-            raise ValueError("buffer_index must be 1 or 2")
+            raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
 
-    def is_full(self, buffer_index=1):
-        """Check if specified buffer is full."""
-        if buffer_index == 1:
-            return len(self.buffer1) >= self.capacity1
-        elif buffer_index == 2:
-            return len(self.buffer2) >= self.capacity2
+    def is_full(self, buffer_type="main"):
+        if buffer_type == "main":
+            return len(self.main_buffer.items) >= self.main_buffer.capacity
+        elif buffer_type == "upper":
+            return len(self.upper_buffer.items) >= self.upper_buffer.capacity
+        elif buffer_type == "lower":
+            return len(self.lower_buffer.items) >= self.lower_buffer.capacity
         else:
-            raise ValueError("buffer_index must be 1 or 2")
+            raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
 
-    def is_empty(self, buffer_index=1):
-        """Check if specified buffer is empty."""
-        if buffer_index == 1:
-            return len(self.buffer1) == 0
-        elif buffer_index == 2:
-            return len(self.buffer2) == 0
+    def is_empty(self, buffer_type="main"):
+        if buffer_type == "main":
+            return len(self.main_buffer.items) == 0
+        elif buffer_type == "upper":
+            return len(self.upper_buffer.items) == 0
+        elif buffer_type == "lower":
+            return len(self.lower_buffer.items) == 0
         else:
-            raise ValueError("buffer_index must be 1 or 2")
+            raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
 
-    def total_size(self):
-        """Return total number of products in both buffers."""
-        return len(self.buffer1) + len(self.buffer2)
-
-    def has_space(self):
-        """Return True if either buffer has space."""
-        return (len(self.buffer1) < self.capacity1) or (len(self.buffer2) < self.capacity2)
+    def run(self):
+        """Auto-transfer products from main_buffer to downstream station if possible."""
+        while True:
+            if self.downstream_station is not None:
+                if self.main_buffer.items and self.downstream_station.buffer.level < self.downstream_station.buffer_size:
+                    product = yield self.main_buffer.get()
+                    yield self.downstream_station.buffer.put(product)
+                    print(f"[{self.env.now:.2f}] TripleBufferConveyor: moved product to {self.downstream_station.id}")
+                else:
+                    yield self.env.timeout(1.0)
+            else:
+                yield self.env.timeout(1.0)

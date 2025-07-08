@@ -168,61 +168,46 @@ class Station(Device):
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
-        from src.simulation.entities.conveyor import DualBufferConveyor
-        if isinstance(self.downstream_conveyor, DualBufferConveyor):
-            while self.downstream_conveyor.is_full(1) and self.downstream_conveyor.is_full(2):
-                print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both buffers of downstream conveyor full, waiting...")
-                yield self.env.timeout(2.0)
-            # 选择产品数最少的buffer
-            if self.downstream_conveyor.is_full(1):
-                chosen_buffer = 2
-            elif self.downstream_conveyor.is_full(2):
-                chosen_buffer = 1
-            else:
-                # 两个都不满，选产品数更少的
-                if len(self.downstream_conveyor.buffer1) <= len(self.downstream_conveyor.buffer2):
-                    chosen_buffer = 1
-                else:
-                    chosen_buffer = 2
-            self.downstream_conveyor.push(product, buffer_index=chosen_buffer)
-            print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream buffer{chosen_buffer}")
+        from src.simulation.entities.conveyor import TripleBufferConveyor
+
+        if self.downstream_conveyor is None:
+        # No downstream, end of process
             return
         
-        try:
-            # Get the process route for this product type
-            route = self.DEFAULT_PROCESS_ROUTE.get(product.product_type, [])
-            
-            if not route:
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 未找到产品类型 {product.product_type} 的工艺路线")
+        # TripleBufferConveyor special handling (only StationC)
+        if isinstance(self.downstream_conveyor, TripleBufferConveyor):
+            if product.product_type == "P3":
+                # P3 product to the least full buffer (upper/lower)
+                while self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
+                    print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both AGV buffers of downstream conveyor full, waiting...")
+                    yield self.env.timeout(2.0)
+
+                if self.downstream_conveyor.is_full("upper"):
+                    chosen_buffer = "lower"
+                elif self.downstream_conveyor.is_full("lower"):
+                    chosen_buffer = "upper"
+                else:
+                    if len(self.downstream_conveyor.upper_buffer.items) <= len(self.downstream_conveyor.lower_buffer.items):
+                        chosen_buffer = "upper"
+                    else:
+                        chosen_buffer = "lower"
+                yield self.downstream_conveyor.push(product, buffer_type=chosen_buffer)
+                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3) moved to downstream {chosen_buffer} buffer")
                 return
-            
-            # Find current station index in the route
-            try:
-                current_index = route.index(self.id)
-            except ValueError:
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 当前工站不在产品 {product.id} 的工艺路线中")
-                return
-            
-            # Check if this is the last station in the route
-            if current_index >= len(route) - 1:
-                print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 完成全部工艺流程")
-                return
-            
-            # Get next station in the route
-            next_station_id = route[current_index + 1]
-            
-            print(f"[{self.env.now:.2f}] 🔄 {self.id}: 准备将产品 {product.id} 转移到 {next_station_id}")
-            
-            # Use callback to request product transfer via AGV
-            if self.product_transfer_callback:
-                yield self.env.process(
-                    self.product_transfer_callback(product, self.id, next_station_id)
-                )
             else:
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 缺少产品转移回调函数，无法转移产品")
-                
-        except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品转移失败: {e}")
+                # no P3 product, move to main buffer
+                while self.downstream_conveyor.is_full("main"):
+                    print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Main buffer of downstream conveyor full, waiting...")
+                    yield self.env.timeout(2.0)
+                yield self.downstream_conveyor.push(product, buffer_type="main")
+                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream main buffer")
+                return
+        else:
+            # normal conveyor
+            while self.downstream_conveyor.is_full():
+                yield self.env.timeout(2.0)
+            yield self.downstream_conveyor.push(product)
+            return
 
     def add_product_to_buffer(self, product):
         """Add a product to the station's buffer (used by AGV for delivery)"""
