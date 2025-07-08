@@ -3,164 +3,204 @@
 
 factory:
   name: "SUPCON AdventureX Factory"
-  description: "智能制造仿真工厂"
+  description: "智能制造仿真工厂（分区AGV系统）"
 
-# 路径点定义 (x, y坐标)
+# 路径点定义 (x, y坐标) - 作为基础参考
 path_points:
-  P0: [5, 20]    # 入口点
-  P1: [12, 20]   # StationA前
-  P2: [18, 20]   # StationA后
-  P3: [32, 20]   # StationB前
-  P4: [38, 20]   # StationB后
-  P5: [58, 20]   # StationC前
-  P6: [72, 20]   # StationC后
-  P7: [78, 20]   # QualityCheck前
-  P8: [85, 20]   # QualityCheck后
-  P9: [10, 10]   # 维护区域
+  P0: [5, 20] # 入口交互点
+  P1: [15, 20] # StationA交互点
+  P2: [35, 20] # StationB交互点
+  P3: [55, 20] # StationC交互点
+  P4: [75, 20] # QualityCheck交互点
+  P5: [85, 20] # 出口交互点
+  C1: [10, 10] # 下方充电站
+  C2: [10, 30] # 上方充电站
 
 # 路径段定义 (单向路径)
 path_segments:
-  - [P0, P1]  # 主线向前
+  - [P0, P1] # 主线向前
   - [P1, P2]
   - [P2, P3]
   - [P3, P4]
   - [P4, P5]
-  - [P5, P6]
-  - [P6, P7]
-  - [P7, P8]
-  - [P2, P1]  # 返回路径
-  - [P1, P0]
+  - [P5, P0]
   - [P4, P3]
   - [P3, P2]
-  - [P6, P5]
+  - [P2, P1] # 返回路径
+  - [P1, P0]
   - [P5, P4]
-  - [P8, P7]
-  - [P7, P6]
+  - [P4, P3]
+  - [P3, P2]
+  - [P2, P1]
+  - [P1, P0]
 
-# 工站配置
+# AGV分区和路径定义
+agv_zones:
+  lower:
+    path_y: 15
+    charge_station: [10, 10]
+  upper:
+    path_y: 25
+    charge_station: [10, 30]
+
+# 工站与AGV交互点定义 (包含前后点)
+station_interactions:
+  RawMaterial:
+    # 只有一个交互点
+    interaction: [5, 20]
+  StationA:
+    pre: [12, 20] # 上料口
+    post: [18, 20] # 下料口
+  StationB:
+    pre: [32, 20]
+    post: [38, 20]
+  StationC:
+    pre: [52, 20]
+    post: [58, 20]
+  QualityCheck:
+    pre: [72, 20]
+    post: [78, 20]
+  Warehouse:
+    # 只有一个交互点
+    interaction: [85, 20]
+
+# 工站配置 - 基于智能制造流程
 stations:
   - id: "StationA"
-    name: "组装工站"
+    name: "初级加工工站"
+    description: "基础组装、元器件处理、初步加工"
     position: [15, 20]
     buffer_size: 3
-    processing_times:  # 产品类型: [最小时间, 最大时间] (秒)
-      P1: [30, 45]
-      P2: [40, 60]
-      P3: [35, 50]
-    precision_level: 98.5  # 基础精度水平 (%)
-    maintenance_cost: 150  # 维修基础成本
-    
+    processing_times: # 产品类型: [最小时间, 最大时间] (秒)
+      P1: [30, 45] # 标准初级加工：基础处理工艺
+      P2: [40, 60] # 精密初级加工：高精度处理，严格工艺控制
+      P3: [35, 50] # 定制初级加工：复杂产品初始处理
+    processing_times_second_pass: # P3二次加工时间（不适用于StationA）
+      P3: [30, 45] # 备用参数
+    precision_level: 98.5 # 基础精度水平 (%)
+
   - id: "StationB"
-    name: "焊接工站"
+    name: "精密加工工站"
+    description: "精密处理、连接加工、质量控制"
     position: [35, 20]
     buffer_size: 3
     processing_times:
-      P1: [45, 60]
-      P2: [60, 80]
-      P3: [50, 70]
+      P1: [45, 60] # 标准精密加工：常规精密处理
+      P2: [60, 80] # 高精度加工：多阶段控制，严格工艺
+      P3: [50, 70] # 定制精密加工第一次：复杂工艺处理
+    processing_times_second_pass: # P3二次精密加工时间
+      P3: [40, 60] # 定制精密加工第二次：附加处理工艺
     precision_level: 97.0
-    maintenance_cost: 200
-    
+    preheating_time: 900 # 15分钟预热时间（秒）
+
   - id: "StationC"
-    name: "测试工站"
+    name: "综合测试工站"
+    description: "功能测试、性能验证、参数调整"
     position: [55, 20]
     buffer_size: 3
+    special_buffer: true # 支持P3产品暂存的特殊缓冲区
     processing_times:
-      P1: [20, 30]
-      P2: [30, 40]
-      P3: [25, 35]
+      P1: [20, 30] # 基础功能测试：基本功能验证
+      P2: [30, 40] # 精密测试：全参数测试+精度验证
+      P3: [25, 35] # 初步测试：基础功能验证
+    processing_times_second_pass: # P3全面测试时间
+      P3: [35, 50] # 全面测试：完整功能+性能+可靠性测试
     precision_level: 99.0
-    maintenance_cost: 120
-    
+
   - id: "QualityCheck"
-    name: "质量检测站"
+    name: "最终质量检验站"
+    description: "最终检验、品质确认、出厂准备"
     position: [75, 20]
     buffer_size: 2
     processing_times:
-      P1: [15, 25]
-      P2: [20, 30]
-      P3: [20, 30]
+      P1: [15, 25] # 标准检验：基础检查+功能抽检
+      P2: [20, 30] # 严格检验：全面检查+性能验证
+      P3: [25, 35] # 深度检验：完整检验+品质确认
     precision_level: 99.8
-    maintenance_cost: 180
 
-# AGV配置
+# AGV配置 - 带有分区信息
 agvs:
   - id: "AGV_1"
-    name: "智能搬运车1号"
+    name: "下方区域AGV"
+    zone: "lower" # 指定AGV的操作区域
     initial_position: [10, 15]
-    speed_mps: 2.0  # 移动速度 (米/秒)
-    battery_capacity: 100  # 电池容量 (%)
-    battery_consumption_rate: 0.5  # 每秒消耗 (%)
-    charging_rate: 2.0  # 充电速率 (%/秒)
-    payload_capacity: 5  # 最大载货数量
-    maintenance_cost: 100
-    
+    speed_mps: 2.0 # 移动速度 (米/秒)
+    battery_capacity: 100 # 电池容量 (%)
+    battery_consumption_rate: 0.5 # 每秒消耗 (%)
+    charging_rate: 2.0 # 充电速率 (%/秒)
+    payload_capacity: 5 # 最大载货数量
+
   - id: "AGV_2"
-    name: "智能搬运车2号"
+    name: "上方区域AGV"
+    zone: "upper" # 指定AGV的操作区域
     initial_position: [10, 25]
     speed_mps: 2.0
     battery_capacity: 100
     battery_consumption_rate: 0.5
     charging_rate: 2.0
     payload_capacity: 5
-    maintenance_cost: 100
 
 # 生产参数
 production:
   # 订单生成参数
   order_generation:
-    interval_min: 30  # 最小间隔 (秒)
-    interval_max: 60  # 最大间隔 (秒)
-    
+    interval_min: 30 # 最小间隔 (秒)
+    interval_max: 60 # 最大间隔 (秒)
+
     # 数量分布 (概率权重)
     quantity_distribution:
-      1: 0.40  # 40%
-      2: 0.30  # 30%
-      3: 0.20  # 20%
-      4: 0.07  # 7%
-      5: 0.03  # 3%
-    
+      1: 0.40 # 40%
+      2: 0.30 # 30%
+      3: 0.20 # 20%
+      4: 0.07 # 7%
+      5: 0.03 # 3%
+
     # 产品类型分布
     product_distribution:
-      P1: 0.60  # 60%
-      P2: 0.30  # 30%
-      P3: 0.10  # 10%
-    
+      P1: 0.60 # 60%
+      P2: 0.30 # 30%
+      P3: 0.10 # 10%
+
     # 优先级分布
     priority_distribution:
-      low: 0.70    # 70%
+      low: 0.70 # 70%
       medium: 0.25 # 25%
-      high: 0.05   # 5%
-    
+      high: 0.05 # 5%
+
     # 截止日期计算倍数
     deadline_multipliers:
-      low: 3.0     # 3倍预计完成时间
-      medium: 2.0  # 2倍预计完成时间
-      high: 1.5    # 1.5倍预计完成时间
+      low: 3.0 # 3倍预计完成时间
+      medium: 2.0 # 2倍预计完成时间
+      high: 1.5 # 1.5倍预计完成时间
 
-  # 材料成本 (每件)
-  material_costs:
-    P1: 25.0
-    P2: 40.0
-    P3: 60.0
-  
-  # 能源成本
-  energy:
-    base_cost_per_kwh: 0.8  # 基础电价
-    peak_hour_multiplier: 1.5  # 高峰时段倍数
-    peak_hours: [9, 10, 11, 17, 18, 19, 20, 21]  # 高峰时段
-    
-  # 报废成本
-  defect_costs:
-    P1: 15.0
-    P2: 25.0
-    P3: 35.0
+# 质量控制参数 - 基于真实电子制造质量标准
+quality_control:
+  # 质检失败率 (基于产品复杂度)
+  defect_rates:
+    P1: 0.06 # 6% - 标准消费电子
+    P2: 0.08 # 8% - 高精度工控设备
+    P3: 0.12 # 12% - 复杂定制设备
+
+  # 返工规则和成本
+  rework_rules:
+    max_rework_attempts: 2 # 最大返工次数
+    rework_stations:
+      precision_defect: "StationC" # 精度问题返回测试工站
+      assembly_defect: "StationA" # 装配问题返回组装工站
+      solder_defect: "StationB" # 焊接问题返回焊接工站
+      cosmetic_defect: "QualityCheck" # 外观问题重新检验
+
+  # 质量改进随连续生产提升
+  quality_learning_curve:
+    improvement_rate: 0.02 # 每100件产品质量提升2%
+    max_improvement: 0.15 # 最大改进15%
+    reset_on_changeover: true # 产品切换时重置学习效果
 
 # 故障系统参数
 fault_system:
-  injection_interval: [300, 900]  # 故障注入间隔 (5-15分钟)
-  auto_recovery_time: [600, 1800]  # 自动恢复时间 (10-30分钟)
-  
+  injection_interval: [300, 900] # 故障注入间隔 (5-15分钟)
+  auto_recovery_time: [600, 1800] # 自动恢复时间 (10-30分钟)
+
   # 设备关系映射 (用于连锁反应)
   device_relationships:
     StationA: ["StationB", "AGV_1"]
@@ -172,12 +212,11 @@ fault_system:
 
 # KPI计算权重
 kpi_weights:
-  production_efficiency: 0.40  # 生产效率 40%
-  cost_control: 0.30           # 成本控制 30%
-  robustness: 0.30             # 鲁棒性 30%
+  production_efficiency: 0.50 # 生产效率 50%
+  robustness: 0.50 # 鲁棒性 50%
 
 # 系统性能参数
 system:
-  status_publish_interval: 10.0  # 状态发布间隔 (秒)
-  simulation_step_size: 0.1      # 仿真步长 (秒)
-  max_concurrent_orders: 20      # 最大并发订单数 
+  status_publish_interval: 10.0 # 状态发布间隔 (秒)
+  simulation_step_size: 0.1 # 仿真步长 (秒)
+  max_concurrent_orders: 20 # 最大并发订单数
