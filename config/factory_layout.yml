@@ -16,23 +16,42 @@ path_points:
   C1: [10, 10] # 下方充电站
   C2: [10, 30] # 上方充电站
 
-# 路径段定义 (单向路径)
-path_segments:
-  - [P0, P1] # 主线向前
-  - [P1, P2]
-  - [P2, P3]
-  - [P3, P4]
-  - [P4, P5]
-  - [P5, P0]
-  - [P4, P3]
-  - [P3, P2]
-  - [P2, P1] # 返回路径
-  - [P1, P0]
-  - [P5, P4]
-  - [P4, P3]
-  - [P3, P2]
-  - [P2, P1]
-  - [P1, P0]
+# AGV独立路径点
+lower_path_points:
+  LP0: [5, 15]
+  LP1: [15, 15]
+  LP2: [35, 15]
+  LP3: [55, 15]
+  LP4: [75, 15]
+  LP5: [85, 15]
+  LC1: [10, 10]
+
+upper_path_points:
+  UP0: [5, 25]
+  UP1: [15, 25]
+  UP2: [35, 25]
+  UP3: [55, 25]
+  UP4: [75, 25]
+  UP5: [85, 25]
+  UC1: [10, 30]
+
+# 路径段定义 (单向路径) - [DEPRECATED by agv_paths]
+# path_segments:
+#   - [P0, P1] # 主线向前
+#   - [P1, P2]
+#   - [P2, P3]
+#   - [P3, P4]
+#   - [P4, P5]
+#   - [P5, P0]
+#   - [P4, P3]
+#   - [P3, P2]
+#   - [P2, P1] # 返回路径
+#   - [P1, P0]
+#   - [P5, P4]
+#   - [P4, P3]
+#   - [P3, P2]
+#   - [P2, P1]
+#   - [P1, P0]
 
 # AGV分区和路径定义
 agv_zones:
@@ -42,6 +61,41 @@ agv_zones:
   upper:
     path_y: 25
     charge_station: [10, 30]
+
+# 为每个AGV定义的固定路径
+agv_paths:
+  AGV_1:
+    zone: "lower"
+    path_points: "lower_path_points"
+    segments:
+      - ["LP0", "LP1"]
+      - ["LP1", "LP2"]
+      - ["LP2", "LP3"]
+      - ["LP3", "LP4"]
+      - ["LP4", "LP5"]
+      - ["LP5", "LP4"]
+      - ["LP4", "LP3"]
+      - ["LP3", "LP2"]
+      - ["LP2", "LP1"]
+      - ["LP1", "LP0"]
+      - ["LP0", "LC1"]
+      - ["LC1", "LP0"]
+  AGV_2:
+    zone: "upper"
+    path_points: "upper_path_points"
+    segments:
+      - ["UP0", "UP1"]
+      - ["UP1", "UP2"]
+      - ["UP2", "UP3"]
+      - ["UP3", "UP4"]
+      - ["UP4", "UP5"]
+      - ["UP5", "UP4"]
+      - ["UP4", "UP3"]
+      - ["UP3", "UP2"]
+      - ["UP2", "UP1"]
+      - ["UP1", "UP0"]
+      - ["UP0", "UC1"]
+      - ["UC1", "UP0"]
 
 # 工站与AGV交互点定义 (包含前后点)
 station_interactions:
