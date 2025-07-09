@@ -11,6 +11,10 @@ class Conveyor:
         self.store = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
         self._auto_transfer_proc = None
+        self.fault_system = None
+
+    def set_fault_system(self, fault_system):
+        self.fault_system = fault_system
 
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer."""
@@ -119,7 +123,7 @@ class TripleBufferConveyor:
         """Auto-transfer products from main_buffer to downstream station if possible."""
         while True:
             if self.downstream_station is not None:
-                if self.main_buffer.items and self.downstream_station.buffer.level < self.downstream_station.buffer_size:
+                if self.main_buffer.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
                     product = yield self.main_buffer.get()
                     yield self.downstream_station.buffer.put(product)
                     print(f"[{self.env.now:.2f}] TripleBufferConveyor: moved product to {self.downstream_station.id}")

@@ -4,8 +4,10 @@ import simpy
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
-
+from src.utils.mqtt_client import MQTTClient
 from config.schemas import DeviceDetailedStatus, DiagnosisResult, DeviceStatus
+import json
+from config.topics import BUFFER_FULL_ALERT_TOPIC
 
 @dataclass
 class FaultDefinition:
@@ -39,12 +41,14 @@ class FaultSystem:
     Maintains device state and provides inspection data to agents.
     """
     
-    def __init__(self, env: simpy.Environment, factory_devices: Dict):
+    def __init__(self, env: simpy.Environment, factory_devices: Dict, mqtt_client: MQTTClient):
         self.env = env
         self.active_faults: Dict[str, 'ActiveFault'] = {}
         self.devices_under_repair: Dict[str, float] = {}  # device_id -> repair_end_time
         self.factory_devices = factory_devices  # 工厂中所有设备的引用
         self.device_relationship_map = self._build_device_relationships()
+        
+        self.mqtt_client = mqtt_client
         
         # Fault definitions from PRD Table 2.5
         self.fault_definitions = {
@@ -511,6 +515,24 @@ class FaultSystem:
             "devices_under_repair": len(self.devices_under_repair),
             "repair_devices": list(self.devices_under_repair.keys())
         }
+
+    def report_buffer_full(self, device_id: str, buffer_type: str):
+        """
+        软故障/告警：buffer满提醒，不影响设备状态，仅用于提示和事件记录。
+        未来如需升级为硬故障，可在此处调用inject_random_fault或相关方法。
+        """
+        print(f"[{self.env.now:.2f}] ⚠️ Buffer Full: {device_id} 的 {buffer_type} 已满，产线阻塞")
+        if self.mqtt_client:
+            payload = json.dumps({
+            "event": "buffer_full",
+            "time": self.env.now,
+            "device_id": device_id,
+            "buffer_type": buffer_type,
+            "msg": f"{device_id}'s {buffer_type} is full, current production line is blocked"
+            })
+            self.mqtt_client.publish(BUFFER_FULL_ALERT_TOPIC, payload)
+        # TODO: 未来如需升级为硬故障，可在此处注入故障
+        # self.inject_random_fault(device_id, FaultType.EFFICIENCY_ANOMALY)  # 示例
 
 @dataclass 
 class ActiveFault:

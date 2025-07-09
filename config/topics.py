@@ -7,6 +7,10 @@ AGV_STATUS_TOPIC = "factory/resource/{device_id}/status"
 QUALITY_CHECKER_STATUS_TOPIC = "factory/quality/{device_id}/status"
 FACTORY_STATUS_TOPIC = "factory/status"
 
+# Buffer full alert topics (published by fault system)
+DEVICE_ALERT_TOPIC = "factory/alerts/{device_id}"
+BUFFER_FULL_ALERT_TOPIC = "factory/alerts/buffer_full"
+
 # Order and KPI topics
 NEW_ORDER_TOPIC = "factory/orders/new"
 KPI_UPDATE_TOPIC = "factory/kpi/update"

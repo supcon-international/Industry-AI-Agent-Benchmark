@@ -22,6 +22,7 @@ class QualityChecker(Station):
     1. 基于产品质量分数做出简单决策
     2. 通过/报废/返工三种结果
     3. 最小化配置参数
+    4. 增加output_buffer，满时阻塞并告警
     """
     
     def __init__(
@@ -29,10 +30,12 @@ class QualityChecker(Station):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        buffer_size: int = 3,
+        buffer_size: int = 1,
         processing_times: Dict[str, Tuple[int, int]] = {},
         pass_threshold: float = 80.0,  # 合格阈值
-        scrap_threshold: float = 40.0   # 报废阈值
+        scrap_threshold: float = 40.0,  # 报废阈值
+        output_buffer_capacity: int = 5,  # 新增，output buffer容量
+        fault_system=None  # 新增，便于buffer满时告警
     ):
         # 默认检测时间
         if processing_times is None:
@@ -41,11 +44,16 @@ class QualityChecker(Station):
                 "P2": (12, 18), 
                 "P3": (10, 15)
             }
-            
+        
         super().__init__(env, id, position, buffer_size, processing_times)
         
         self.pass_threshold = pass_threshold
         self.scrap_threshold = scrap_threshold
+        
+        # output buffer for storing passed/finished products, blocked when full
+        self.output_buffer_capacity = output_buffer_capacity
+        self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
+        self.fault_system = fault_system
         
         # 简单统计
         self.inspected_count = 0
@@ -54,7 +62,8 @@ class QualityChecker(Station):
         self.reworked_count = 0
         
         print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{pass_threshold}%, scrap≤{scrap_threshold}%)")
-
+        self.env.process(self.run())
+        
     def process_product(self, product: Product):
         """简化的产品检测流程"""
         if not self.can_operate():
@@ -79,9 +88,8 @@ class QualityChecker(Station):
         
         # 执行决策
         yield self.env.process(self._execute_simple_decision(product, decision))
-        
+
         self.set_status(DeviceStatus.IDLE)
-        print(f"[{self.env.now:.2f}] ✅ {self.id}: 检测完成 - {decision.value}")
 
     def _simple_inspection(self, product: Product):
         """简化的检测过程"""
@@ -124,15 +132,20 @@ class QualityChecker(Station):
             return SimpleDecision.REWORK
 
     def _execute_simple_decision(self, product: Product, decision: SimpleDecision):
-        """执行决策"""
+        """执行决策，合格品放入output_buffer，满则阻塞并告警"""
         if decision == SimpleDecision.PASS:
             self.passed_count += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
-            
+            # 放入output buffer，满则阻塞
+            while len(self.output_buffer.items) >= self.output_buffer_capacity:
+                if self.fault_system:
+                    self.fault_system.report_buffer_full(self.id, "output_buffer")
+                yield self.env.timeout(1.0)
+            yield self.output_buffer.put(product)
+            print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
         elif decision == SimpleDecision.SCRAP:
             self.scrapped_count += 1
             print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 报废")
-            
         elif decision == SimpleDecision.REWORK:
             self.reworked_count += 1
             # 简单返工：回到最后一个加工工站
@@ -142,9 +155,8 @@ class QualityChecker(Station):
                 print(f"[{self.env.now:.2f}] 🔄 {self.id}: 产品 {product.id} 返工到 {last_station}")
             else:
                 print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法确定返工工站，产品报废")
-                
-        # 简单的处理延时
-        yield self.env.timeout(1.0)
+        # # 简单的处理延时
+        # yield self.env.timeout(1.0)
 
     def _get_last_processing_station(self, product: Product) -> str:
         """获取产品最后处理的工站 (排除QualityCheck)"""

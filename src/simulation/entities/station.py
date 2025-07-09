@@ -11,10 +11,11 @@ class Station(Device):
     Represents a manufacturing station in the factory.
 
     Stations have a buffer to hold products and take time to process them.
+    Default input buffer capacity is 1 (single-piece flow).
     
     Attributes:
         buffer (simpy.Store): A buffer to hold incoming products.
-        buffer_size (int): The maximum capacity of the buffer.
+        buffer_size (int): The maximum capacity of the buffer（default 1）。
         processing_times (Dict[str, Tuple[int, int]]): A dictionary mapping product types
             to a tuple of (min_time, max_time) for processing.
         product_transfer_callback (Callable): Callback function to transfer products to next station
@@ -34,11 +35,12 @@ class Station(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        buffer_size: int,
-        processing_times: Dict[str, Tuple[int, int]],
+        buffer_size: int = 1,  # 默认容量为1
+        processing_times: Dict[str, Tuple[int, int]] = {},
         product_transfer_callback: Optional[Callable] = None,
         product_scrap_callback: Optional[Callable] = None,
         downstream_conveyor=None,
+        fault_system=None
     ):
         super().__init__(env, id, position, device_type="station")
         self.buffer_size = buffer_size
@@ -65,7 +67,7 @@ class Station(Device):
         }
         
         self.downstream_conveyor = downstream_conveyor
-        
+        self.fault_system = fault_system
         # Start the main operational process for the station
         self.env.process(self.run())
 
@@ -75,12 +77,12 @@ class Station(Device):
             # 检查设备是否可以操作
             if not self.can_operate():
                 # 设备无法操作时等待
-                yield self.env.timeout(10)  # 每10秒检查一次
+                yield self.env.timeout(1)  # 每1秒检查一次
                 continue
                 
             # Wait for a product to arrive in the buffer
             product = yield self.buffer.get()
-            
+            print(f"[{self.env.now:.2f}] 📦 {self.id}: 从缓冲区获取产品 {product.id}开始自动加工")
             # Start processing the product
             yield self.env.process(self.process_product(product))
 
@@ -180,7 +182,9 @@ class Station(Device):
                 # P3 product to the least full buffer (upper/lower)
                 while self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
                     print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both AGV buffers of downstream conveyor full, waiting...")
-                    yield self.env.timeout(2.0)
+                    if self.fault_system:
+                        self.fault_system.report_buffer_full(self.id, "downstream_conveyor_2_branch_buffer")
+                    yield self.env.timeout(1.0)
 
                 if self.downstream_conveyor.is_full("upper"):
                     chosen_buffer = "lower"
@@ -195,17 +199,17 @@ class Station(Device):
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3) moved to downstream {chosen_buffer} buffer")
                 return
             else:
-                # no P3 product, move to main buffer
+                # not P3 product, move to main buffer
                 while self.downstream_conveyor.is_full("main"):
                     print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Main buffer of downstream conveyor full, waiting...")
-                    yield self.env.timeout(2.0)
+                    yield self.env.timeout(1.0)
                 yield self.downstream_conveyor.push(product, buffer_type="main")
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream main buffer")
                 return
         else:
             # normal conveyor
             while self.downstream_conveyor.is_full():
-                yield self.env.timeout(2.0)
+                yield self.env.timeout(1.0)
             yield self.downstream_conveyor.push(product)
             return
 

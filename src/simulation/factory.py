@@ -69,7 +69,7 @@ class Factory:
         
         # Game logic components (fault system needs device references)
         self.order_generator = OrderGenerator(self.env, self.mqtt_client)
-        self.fault_system = FaultSystem(self.env, self.all_devices)  # 传递设备引用
+        self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)  # 传递设备引用
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
         self.state_space_manager = ComplexStateSpaceManager(self.env, self, self.fault_system)
         
@@ -99,7 +99,9 @@ class Factory:
                     id=station_cfg['id'],
                     position=station_cfg['position'],
                     buffer_size=station_cfg['buffer_size'],
-                    processing_times=station_cfg['processing_times']
+                    processing_times=station_cfg['processing_times'],
+                    # output_buffer_capacity=station_cfg['output_buffer_capacity'],
+                    fault_system=self.fault_system
                 )
                 print(f"[{self.env.now:.2f}] 🔍 Created QualityChecker: {station_cfg['id']}")
             else:
@@ -396,8 +398,8 @@ class Factory:
                     'precision_level': detailed_status.precision_level,
                     'tool_wear_level': detailed_status.tool_wear_level
                 })
-            elif device_id in self.agvs:
-                agv = self.agvs[device_id]
+        elif device_id in self.agvs:
+            agv = self.agvs[device_id]
                 status_dict.update({
                     'position': {'x': agv.position[0], 'y': agv.position[1]},
                     'battery_level': detailed_status.battery_level,
@@ -422,7 +424,7 @@ class Factory:
         self.env.process(self._publish_factory_status())
         
         # Start enhanced fault events publishing  
-        self.env.process(self._publish_enhanced_fault_events())
+        self.env.process(self._publish_fault_events())
     
     def _publish_station_status(self, station_id: str):
         """Publish station status every 10 seconds."""
@@ -507,10 +509,10 @@ class Factory:
             except Exception as e:
                 print(f"[{self.env.now:.2f}] ❌ Failed to publish factory status: {e}")
 
-    def _publish_enhanced_fault_events(self):
+    def _publish_fault_events(self):
         """Publish enhanced fault events to make them more visible."""
         while True:
-            yield self.env.timeout(5.0)  # Check for faults every 5 seconds
+            yield self.env.timeout(1.0)  # Check for faults every 1 seconds
             
             # If there are active faults, publish them more frequently
             for device_id, fault in self.fault_system.active_faults.items():
