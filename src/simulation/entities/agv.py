@@ -31,7 +31,6 @@ class AGV(Vehicle):
         id: str,
         position: Tuple[int, int],
         speed_mps: float,
-        battery_capacity: float,
         payload_capacity: int = 1,
         low_battery_threshold: float = 5.0,  # 低电量阈值
         charging_point: Tuple[int, int] = (10, 10),  # 充电点坐标
@@ -42,7 +41,6 @@ class AGV(Vehicle):
     ):
         super().__init__(env, id, position, speed_mps)
         self.battery_level = 100.0
-        self.battery_capacity = battery_capacity # Not used yet, for future extension
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
         

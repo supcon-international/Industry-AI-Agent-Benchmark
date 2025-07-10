@@ -25,7 +25,7 @@ def test_battery_consumption():
         id="AGV_TEST",
         position=(0, 0),
         speed_mps=2.0,
-        battery_capacity=100.0,
+
         low_battery_threshold=20.0,  # 提高阈值便于测试
         charging_point=(10, 10),
         battery_consumption_per_meter=2.0,  # 增加消耗便于测试
@@ -74,7 +74,6 @@ def test_voluntary_charging():
         id="AGV_CHARGE_TEST",
         position=(50, 50),
         speed_mps=5.0,  # 加快移动速度便于测试
-        battery_capacity=100.0,
         low_battery_threshold=5.0,
         charging_point=(10, 10),
         charging_speed=10.0  # 加快充电速度便于测试
@@ -114,7 +113,6 @@ def test_emergency_charging():
         id="AGV_EMERGENCY_TEST",
         position=(80, 80),
         speed_mps=2.0,
-        battery_capacity=100.0,
         low_battery_threshold=5.0,
         charging_point=(10, 10),
         fault_system=mock_fault_system
@@ -150,7 +148,6 @@ def test_low_battery_operations():
         id="AGV_LOW_BATTERY_TEST",
         position=(20, 20),
         speed_mps=2.0,
-        battery_capacity=100.0,
         low_battery_threshold=10.0
     )
     
@@ -197,7 +194,6 @@ def test_battery_status_monitoring():
         id="AGV_MONITOR_TEST",
         position=(0, 0),
         speed_mps=2.0,
-        battery_capacity=100.0,
         low_battery_threshold=15.0
     )
     

@@ -27,7 +27,7 @@ class AGVConfig:
     name: str
     initial_position: Tuple[int, int]
     speed_mps: float
-    battery_capacity: float
+    battery_level: float
     battery_consumption_rate: float
     charging_rate: float
     payload_capacity: int
@@ -129,7 +129,7 @@ class ConfigLoader:
                 name=agv_data['name'],
                 initial_position=tuple(agv_data['initial_position']),
                 speed_mps=agv_data['speed_mps'],
-                battery_capacity=agv_data['battery_capacity'],
+                battery_level=agv_data['battery_level'],
                 battery_consumption_rate=agv_data['battery_consumption_rate'],
                 charging_rate=agv_data['charging_rate'],
                 payload_capacity=agv_data['payload_capacity'],
@@ -202,7 +202,7 @@ class ConfigLoader:
                 'id': agv.id,
                 'position': agv.initial_position,  # Use initial_position as position
                 'speed_mps': agv.speed_mps,
-                'battery_capacity': agv.battery_capacity
+                'battery_level': agv.battery_level
             }
             legacy_config['agvs'].append(legacy_agv)
         

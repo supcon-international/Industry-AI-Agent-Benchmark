@@ -89,7 +89,7 @@ agvs:
     name: "智能搬运车1号"
     initial_position: [10, 15]
     speed_mps: 2.0  # 移动速度 (米/秒)
-    battery_capacity: 100  # 电池容量 (%)
+    battery_level: 100  # 电池容量 (%)
     battery_consumption_rate: 0.5  # 每秒消耗 (%)
     charging_rate: 2.0  # 充电速率 (%/秒)
     payload_capacity: 5  # 最大载货数量
@@ -99,7 +99,7 @@ agvs:
     name: "智能搬运车2号"
     initial_position: [10, 25]
     speed_mps: 2.0
-    battery_capacity: 100
+    battery_level: 100
     battery_consumption_rate: 0.5
     charging_rate: 2.0
     payload_capacity: 5

@@ -2,11 +2,13 @@
 import random
 import uuid
 import simpy
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from config.schemas import NewOrder, OrderItem, OrderPriority
 from config.topics import NEW_ORDER_TOPIC
 from src.utils.mqtt_client import MQTTClient
+from src.simulation.entities.warehouse import RawMaterial
+from src.simulation.entities.product import Product
 
 class OrderGenerator:
     """
@@ -17,10 +19,10 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient):
+    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient, raw_material: RawMaterial):
         self.env = env
         self.mqtt_client = mqtt_client
-        
+        self.raw = raw_material
         # Order generation parameters from PRD
         self.generation_interval_range = (30, 60)  # seconds
         self.quantity_weights = {1: 40, 2: 30, 3: 20, 4: 7, 5: 3}
@@ -57,10 +59,15 @@ class OrderGenerator:
             
             # Generate and publish new order
             order = self._generate_order()
-            self._publish_order(order)
+            if order:
+                self._publish_order(order)
 
-    def _generate_order(self) -> NewOrder:
+    def _generate_order(self) -> Optional[NewOrder]:
         """Generate a single order according to PRD specifications."""
+        if self.raw.is_full():
+            print(f"[{self.env.now:.2f}] ❌ Raw material warehouse is full, cannot accept new order")
+            return None
+        
         order_id = f"order_{uuid.uuid4().hex[:8]}"
         created_at = self.env.now
         
@@ -72,6 +79,9 @@ class OrderGenerator:
         
         # Calculate deadline based on priority and theoretical production time
         deadline = self._calculate_deadline(created_at, items, priority)
+        
+        for item in items:
+            self.raw.create_raw_material(item.product_type, order_id)
         
         return NewOrder(
             order_id=order_id,

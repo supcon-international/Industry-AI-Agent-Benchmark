@@ -126,7 +126,7 @@ agvs:
   - id: \"AGV_1\"
     position: [10, 15]
     speed_mps: 2.0
-    battery_capacity: 100
+    battery_level: 100
 ```
 
 ## 📊 **KPI监控**

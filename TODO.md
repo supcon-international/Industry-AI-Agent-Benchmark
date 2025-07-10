@@ -49,7 +49,7 @@
     - **文件**: `simulation/entities/station.py`, `simulation/entities/agv.py`, `simulation/entities/conveyor.py`
     - **验收标准**:
         - `Station` 的构造函数接收 `buffer_size` 和 `processing_times: dict` (e.g., `{'P1': (30, 45)}`)。
-        - `AGV` 的构造函数接收 `move_speed` 和 `battery_capacity`。
+        - `AGV` 的构造函数接收 `move_speed` 和 `battery_level`。
         - `Conveyor` 的构造函数接收 `length`, `speed`, `capacity`。
 - [ ] **任务**: 创建并初始化工厂。
     - **文件**: `simulation/factory.py`

@@ -5,6 +5,7 @@ from typing import Dict, Tuple, Optional, Callable
 
 from config.schemas import DeviceStatus
 from src.simulation.entities.base import Device
+from src.simulation.entities.product import Product
 
 class Station(Device):
     """
@@ -213,7 +214,7 @@ class Station(Device):
             yield self.downstream_conveyor.push(product)
             return
 
-    def add_product_to_buffer(self, product):
+    def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer (used by AGV for delivery)"""
         if len(self.buffer.items) >= self.buffer_size:
             print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 缓冲区已满，无法接收产品 {product.id}")
@@ -246,4 +247,4 @@ class Station(Device):
             "total_processing_time": 0.0,
             "average_processing_time": 0.0
         }
-    
+
