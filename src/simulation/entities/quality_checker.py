@@ -132,7 +132,7 @@ class QualityChecker(Station):
             return SimpleDecision.REWORK
 
     def _execute_simple_decision(self, product: Product, decision: SimpleDecision):
-        """执行决策，合格品放入output_buffer，满则阻塞并告警"""
+        """Execute decision, put passed products into output_buffer, block when full and alarm"""
         if decision == SimpleDecision.PASS:
             self.passed_count += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
@@ -186,3 +186,13 @@ class QualityChecker(Station):
         self.passed_count = 0
         self.scrapped_count = 0
         self.reworked_count = 0 
+    
+    def add_product_to_outputbuffer(self, product: Product):
+        """Add a product to its output buffer (used by AGV for delivery)"""
+        if len(self.output_buffer.items) >= self.output_buffer_capacity:
+            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: output buffer已满，无法接收产品 {product.id}")
+            return False
+        
+        self.output_buffer.put(product)
+        print(f"[{self.env.now:.2f}] 📦 {self.id}: 运出产品 {product.id} 到output buffer")
+        return True

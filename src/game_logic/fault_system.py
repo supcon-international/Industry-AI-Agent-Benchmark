@@ -534,6 +534,25 @@ class FaultSystem:
         # TODO: 未来如需升级为硬故障，可在此处注入故障
         # self.inject_random_fault(device_id, FaultType.EFFICIENCY_ANOMALY)  # 示例
 
+    def report_battery_low(self, agv_id: str, battery_level: float):
+        """
+        AGV电量低告警：当AGV电量首次降到阈值以下时触发，用于MQTT推送和事件记录。
+        """
+        print(f"[{self.env.now:.2f}] 🔋 Battery Low Alert: {agv_id} 电量过低 ({battery_level:.1f}%)")
+        if self.mqtt_client:
+            payload = json.dumps({
+                "event": "battery_low",
+                "time": self.env.now,
+                "device_id": agv_id,
+                "battery_level": battery_level,
+                "msg": f"{agv_id} battery level is critically low ({battery_level:.1f}%), automatic charging required"
+            })
+            self.mqtt_client.publish(BUFFER_FULL_ALERT_TOPIC, payload)  # 复用同一topic
+        
+        # 如果需要，可以考虑将电量过低升级为硬故障（影响KPI）
+        # 比如强制中断当前任务，降低效率等
+        # self.inject_random_fault(agv_id, FaultType.AGV_BATTERY_DRAIN)
+
 @dataclass 
 class ActiveFault:
     """Represents an active fault in the system."""

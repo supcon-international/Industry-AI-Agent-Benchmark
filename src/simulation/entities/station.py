@@ -183,7 +183,7 @@ class Station(Device):
                 while self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
                     print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both AGV buffers of downstream conveyor full, waiting...")
                     if self.fault_system:
-                        self.fault_system.report_buffer_full(self.id, "downstream_conveyor_2_branch_buffer")
+                        self.fault_system.report_buffer_full(self.id, "downstream_conveyor_all_branch_buffer")
                     yield self.env.timeout(1.0)
 
                 if self.downstream_conveyor.is_full("upper"):

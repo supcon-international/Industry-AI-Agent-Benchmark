@@ -66,6 +66,8 @@ class CommandHandler:
                 self._handle_test_command(target, params)
             elif action == "move_agv":
                 self._handle_move_agv(target, params)
+            elif action == "agv_action_sequence":
+                self._handle_agv_action_sequence(target, params)
             elif action == "request_maintenance":
                 self._handle_request_maintenance(target, params)
             elif action == "inspect_device":
@@ -117,6 +119,72 @@ class CommandHandler:
         
         # Schedule the movement in the simulation
         self.factory.env.process(self.factory.move_agv(agv_id, closest_point, destination_id))
+
+    def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any]):
+        """支持agent一次下发一串AGV动作，仿真端按序执行并反馈。params: {actions: [{type, args}]}
+        type: move/load/unload; args: dict
+        """
+        if agv_id not in self.factory.agvs:
+            logger.error(f"AGV {agv_id} not found in factory")
+            return
+        agv = self.factory.agvs[agv_id]
+        actions = params.get("actions", [])
+        env = self.factory.env
+        devices = {**self.factory.stations, **self.factory.agvs}
+        # 加入conveyor/qualitychecker
+        if hasattr(self.factory, 'conveyor_ab'):
+            devices['conveyor_ab'] = self.factory.conveyor_ab
+        if hasattr(self.factory, 'conveyor_bc'):
+            devices['conveyor_bc'] = self.factory.conveyor_bc
+        if hasattr(self.factory, 'conveyor_cq'):
+            devices['conveyor_cq'] = self.factory.conveyor_cq
+        if hasattr(self.factory, 'stations') and 'QualityCheck' in self.factory.stations:
+            devices['QualityCheck'] = self.factory.stations['QualityCheck']
+        def agv_action_sequence_proc():
+            for idx, act in enumerate(actions):
+                act_type = act.get('type')
+                args = act.get('args', {})
+                feedback = ""
+                success = False
+                # move: args: {target_pos: [x, y]}
+                if act_type == 'move':
+                    target_pos = tuple(args.get('target_pos', agv.position))
+                    path_points = self.factory.path_points if hasattr(self.factory, 'path_points') else {}
+                    yield from agv.move_to(target_pos, path_points)
+                    feedback = f"AGV已移动到{target_pos}"
+                    success = True
+                # load: args: {device_id, buffer_type}
+                elif act_type == 'load':
+                    device_id = args.get('device_id')
+                    buffer_type = args.get('buffer_type')
+                    device = devices.get(device_id)
+                    if device is None:
+                        feedback = f"未找到设备{device_id}"
+                    else:
+                        s, f, _ = yield from agv.load_from(device, buffer_type)
+                        feedback = f
+                        success = s
+                # unload: args: {device_id, buffer_type}
+                elif act_type == 'unload':
+                    device_id = args.get('device_id')
+                    buffer_type = args.get('buffer_type')
+                    device = devices.get(device_id)
+                    if device is None:
+                        feedback = f"未找到设备{device_id}"
+                    else:
+                        s, f, _ = yield from agv.unload_to(device, buffer_type)
+                        feedback = f
+                        success = s
+                else:
+                    feedback = f"未知动作类型: {act_type}"
+                # 反馈
+                resp = SystemResponse(timestamp=env.now, response=f"[{idx+1}/{len(actions)}] {act_type}: {feedback}").model_dump_json()
+                self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, resp)
+                # 若失败则中断后续
+                if not success:
+                    break
+        # 启动仿真进程
+        env.process(agv_action_sequence_proc())
 
     def _handle_request_maintenance(self, device_id: str, params: Dict[str, Any]):
         """Handle maintenance request commands."""

@@ -54,9 +54,9 @@ class Factory:
             "scrap_reasons": {}
         }
         
-        self.conveyor_ab = Conveyor(self.env, capacity=5)  # A→B
-        self.conveyor_bc = Conveyor(self.env, capacity=5)  # B→C
-        self.conveyor_cq = TripleBufferConveyor(self.env, main_capacity=5, upper_capacity=3, lower_capacity=3)  # C→QualityCheck
+        self.conveyor_ab = Conveyor(self.env, id="conveyor_ab", capacity=5)  # A→B
+        self.conveyor_bc = Conveyor(self.env, id="conveyor_bc", capacity=5)  # B→C
+        self.conveyor_cq = TripleBufferConveyor(self.env, id="conveyor_cq", main_capacity=5, upper_capacity=3, lower_capacity=3)  # C→QualityCheck
         
         # Create devices first
         self._create_devices()
@@ -83,8 +83,6 @@ class Factory:
         self.unity_publisher = RealTimePublisher(self.env, self.mqtt_client, self)
         print(f"[{self.env.now:.2f}] 🎮 Unity real-time publisher initialized (100ms AGV updates)")
         
-        # Start AGV dispatcher
-        self.env.process(self._agv_dispatcher())
         
         self._bind_conveyors_to_stations()
         self._setup_conveyor_downstreams()
@@ -204,28 +202,6 @@ class Factory:
         
         return priority
 
-    def _agv_dispatcher(self):
-        """AGV dispatcher that assigns transport tasks to available AGVs"""
-        while True:
-            try:
-                # Wait for a transport task
-                task = yield self.agv_task_queue.get()
-                
-                # Find an available AGV
-                available_agv = self._find_available_agv()
-                
-                if available_agv:
-                    # Assign the task to the AGV
-                    self.env.process(self._execute_transport_task(available_agv, task))
-                else:
-                    # No AGV available, put task back in queue
-                    print(f"[{self.env.now:.2f}] ⏳ AGV Dispatcher: 无可用AGV，任务重新排队")
-                    yield self.agv_task_queue.put(task)
-                    yield self.env.timeout(5.0)  # Wait before retrying
-                    
-            except Exception as e:
-                print(f"[{self.env.now:.2f}] ❌ AGV Dispatcher: 调度失败: {e}")
-                yield self.env.timeout(1.0)
 
     def _find_available_agv(self) -> Optional[str]:
         """Find an available AGV for transport task"""

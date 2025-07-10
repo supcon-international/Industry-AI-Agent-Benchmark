@@ -5,8 +5,9 @@ class Conveyor:
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, capacity):
+    def __init__(self, env, id, capacity):
         self.env = env
+        self.id = id
         self.capacity = capacity
         self.store = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
@@ -46,7 +47,7 @@ class Conveyor:
         while True:
             if self.downstream_station is not None:
                 # Only transfer if both conveyor and downstream buffer are not empty/full
-                if self.store.items and self.downstream_station.buffer.level < self.downstream_station.buffer_size:
+                if self.store.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
                     product = yield self.store.get()
                     yield self.downstream_station.buffer.put(product)
                     print(f"[{self.env.now:.2f}] Conveyor: moved product to {self.downstream_station.id}")
@@ -63,7 +64,8 @@ class TripleBufferConveyor:
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, main_capacity, upper_capacity, lower_capacity):
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity):
+        self.id = id
         self.env = env
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
