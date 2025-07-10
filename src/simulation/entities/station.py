@@ -7,6 +7,26 @@ from config.schemas import DeviceStatus
 from src.simulation.entities.base import Device
 from src.simulation.entities.product import Product
 
+"""
+SimPy Store和事件管理说明：
+===================
+
+SimPy的Store对象(包括各种buffer)具有自动容量管理特性：
+1. Store.put(item): 当Store满时会自动阻塞，直到有空间可用
+2. Store.get(): 当Store空时会自动阻塞，直到有元素可取
+3. 类似地，Conveyor.push()等操作也会自动阻塞
+
+因此在代码中：
+❌ 错误做法：手动检查容量 + while循环等待 + yield操作
+✅ 正确做法：直接yield操作，信任SimPy的自动阻塞机制
+
+这样的设计：
+- 简化了代码逻辑
+- 避免了竞态条件
+- 提高了仿真的准确性
+- 遵循了SimPy的设计哲学
+"""
+
 class Station(Device):
     """
     Represents a manufacturing station in the factory.
@@ -174,53 +194,48 @@ class Station(Device):
         from src.simulation.entities.conveyor import TripleBufferConveyor
 
         if self.downstream_conveyor is None:
-        # No downstream, end of process
+            # No downstream, end of process
             return
         
         # TripleBufferConveyor special handling (only StationC)
         if isinstance(self.downstream_conveyor, TripleBufferConveyor):
             if product.product_type == "P3":
                 # P3 product to the least full buffer (upper/lower)
-                while self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
-                    print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Both AGV buffers of downstream conveyor full, waiting...")
+                # 检查哪个buffer比较空，但不需要while循环等待
+                # push()操作会自动阻塞直到有空间
+                if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
                     if self.fault_system:
                         self.fault_system.report_buffer_full(self.id, "downstream_conveyor_all_branch_buffer")
-                    yield self.env.timeout(1.0)
 
                 if self.downstream_conveyor.is_full("upper"):
                     chosen_buffer = "lower"
                 elif self.downstream_conveyor.is_full("lower"):
                     chosen_buffer = "upper"
                 else:
+                    # 选择较空的buffer
                     if len(self.downstream_conveyor.upper_buffer.items) <= len(self.downstream_conveyor.lower_buffer.items):
                         chosen_buffer = "upper"
                     else:
                         chosen_buffer = "lower"
+                        
                 yield self.downstream_conveyor.push(product, buffer_type=chosen_buffer)
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3) moved to downstream {chosen_buffer} buffer")
                 return
             else:
                 # not P3 product, move to main buffer
-                while self.downstream_conveyor.is_full("main"):
-                    print(f"[{self.env.now:.2f}] ⏸️  {self.id}: Main buffer of downstream conveyor full, waiting...")
-                    yield self.env.timeout(1.0)
+
                 yield self.downstream_conveyor.push(product, buffer_type="main")
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream main buffer")
                 return
         else:
-            # normal conveyor
-            while self.downstream_conveyor.is_full():
-                yield self.env.timeout(1.0)
+            # normal conveyor - SimPy push()会自动阻塞直到有空间
             yield self.downstream_conveyor.push(product)
             return
 
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer (used by AGV for delivery)"""
-        if len(self.buffer.items) >= self.buffer_size:
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 缓冲区已满，无法接收产品 {product.id}")
-            return False
-        
-        self.buffer.put(product)
+        # simpy will automatically block if buffer is full
+        yield self.buffer.put(product)
         print(f"[{self.env.now:.2f}] 📦 {self.id}: 接收产品 {product.id} 到缓冲区")
         return True
 

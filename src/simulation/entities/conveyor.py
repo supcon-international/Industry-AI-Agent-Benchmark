@@ -1,6 +1,25 @@
+# simulation/entities/conveyor.py
 import simpy
+from typing import Optional
+from src.simulation.entities.base import BaseConveyor
+from src.simulation.entities.product import Product
 
-class Conveyor:
+"""
+Conveyor自动阻塞说明：
+==================
+
+Conveyor的push()方法基于SimPy Store实现，具有自动阻塞特性：
+- push()操作在buffer满时会自动阻塞，直到有空间
+- 调用者无需手动检查is_full()或使用while循环等待
+- 直接使用 yield conveyor.push(product) 即可
+
+这确保了：
+1. 线程安全的操作
+2. 准确的仿真时序
+3. 简洁的代码逻辑
+"""
+
+class Conveyor(BaseConveyor):
     """
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
@@ -9,7 +28,7 @@ class Conveyor:
         self.env = env
         self.id = id
         self.capacity = capacity
-        self.store = simpy.Store(env, capacity=capacity)
+        self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
         self._auto_transfer_proc = None
         self.fault_system = None
@@ -25,21 +44,24 @@ class Conveyor:
 
     def push(self, product):
         """Put a product on the conveyor (may block if full)."""
-        return self.store.put(product)
+        return self.buffer.put(product)
 
     def pop(self):
         """Remove and return a product from the conveyor (may block if empty)."""
-        return self.store.get()
+        return self.buffer.get()
+
+    def get_buffer(self):
+        return self.buffer
 
     def is_full(self):
-        return len(self.store.items) >= self.capacity
+        return len(self.buffer.items) >= self.capacity
 
     def is_empty(self):
-        return len(self.store.items) == 0
+        return len(self.buffer.items) == 0
 
     def peek(self):
-        if self.store.items:
-            return self.store.items[0]
+        if self.buffer.items:
+            return self.buffer.items[0]
         return None
 
     def run(self):
@@ -47,8 +69,8 @@ class Conveyor:
         while True:
             if self.downstream_station is not None:
                 # Only transfer if both conveyor and downstream buffer are not empty/full
-                if self.store.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
-                    product = yield self.store.get()
+                if self.buffer.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
+                    product = yield self.buffer.get()
                     yield self.downstream_station.buffer.put(product)
                     print(f"[{self.env.now:.2f}] Conveyor: moved product to {self.downstream_station.id}")
                 else:
@@ -56,7 +78,7 @@ class Conveyor:
             else:
                 yield self.env.timeout(1.0)
 
-class TripleBufferConveyor:
+class TripleBufferConveyor(BaseConveyor):
     """
     Conveyor with three buffers:
     - main_buffer: for direct transfer to QualityCheck (auto-transfer)
@@ -81,25 +103,21 @@ class TripleBufferConveyor:
 
     def push(self, product, buffer_type="main"):
         """Put product into specified buffer. buffer_type: 'main', 'upper', 'lower'."""
+        return self.get_buffer(buffer_type).put(product)
+
+    def get_buffer(self, buffer_type="main"):
         if buffer_type == "main":
-            return self.main_buffer.put(product)
+            return self.main_buffer
         elif buffer_type == "upper":
-            return self.upper_buffer.put(product)
+            return self.upper_buffer
         elif buffer_type == "lower":
-            return self.lower_buffer.put(product)
+            return self.lower_buffer
         else:
             raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
 
     def pop(self, buffer_type="main"):
         """Get product from specified buffer."""
-        if buffer_type == "main":
-            return self.main_buffer.get()
-        elif buffer_type == "upper":
-            return self.upper_buffer.get()
-        elif buffer_type == "lower":
-            return self.lower_buffer.get()
-        else:
-            raise ValueError("buffer_type must be 'main', 'upper', or 'lower'")
+        return self.get_buffer(buffer_type).get()
 
     def is_full(self, buffer_type="main"):
         if buffer_type == "main":

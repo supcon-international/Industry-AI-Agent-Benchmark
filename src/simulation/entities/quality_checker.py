@@ -132,17 +132,18 @@ class QualityChecker(Station):
             return SimpleDecision.REWORK
 
     def _execute_simple_decision(self, product: Product, decision: SimpleDecision):
-        """Execute decision, put passed products into output_buffer, block when full and alarm"""
+        """Execute decision, put passed products into output_buffer"""
         if decision == SimpleDecision.PASS:
             self.passed_count += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
-            # 放入output buffer，满则阻塞
-            while len(self.output_buffer.items) >= self.output_buffer_capacity:
-                if self.fault_system:
-                    self.fault_system.report_buffer_full(self.id, "output_buffer")
-                yield self.env.timeout(1.0)
+            
+            # trigger fault system if output buffer is full
+            if self.fault_system and len(self.output_buffer.items) >= self.output_buffer_capacity:
+                self.fault_system.report_buffer_full(self.id, "output_buffer")
+            
             yield self.output_buffer.put(product)
             print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
+            
         elif decision == SimpleDecision.SCRAP:
             self.scrapped_count += 1
             print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 报废")
@@ -189,10 +190,6 @@ class QualityChecker(Station):
     
     def add_product_to_outputbuffer(self, product: Product):
         """Add a product to its output buffer (used by AGV for delivery)"""
-        if len(self.output_buffer.items) >= self.output_buffer_capacity:
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: output buffer已满，无法接收产品 {product.id}")
-            return False
-        
-        self.output_buffer.put(product)
+        yield self.output_buffer.put(product)
         print(f"[{self.env.now:.2f}] 📦 {self.id}: 运出产品 {product.id} 到output buffer")
         return True

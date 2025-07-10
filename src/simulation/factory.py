@@ -239,9 +239,13 @@ class Factory:
             
             # Step 4: Unload product to destination station
             unloaded_product = agv.unload_product(product.id)
-            if unloaded_product and to_station.add_product_to_buffer(unloaded_product):
-                product.add_history(self.env.now, f"Delivered to {to_station_id} by {agv_id}")
-                print(f"[{self.env.now:.2f}] ✅ {agv_id}: 成功运输产品 {product.id} 到 {to_station_id}")
+            if unloaded_product:
+                delivery_success = yield self.env.process(to_station.add_product_to_buffer(unloaded_product))
+                if delivery_success:
+                    product.add_history(self.env.now, f"Delivered to {to_station_id} by {agv_id}")
+                    print(f"[{self.env.now:.2f}] ✅ {agv_id}: 成功运输产品 {product.id} 到 {to_station_id}")
+                else:
+                    print(f"[{self.env.now:.2f}] ❌ {agv_id}: 无法将产品 {product.id} 交付到 {to_station_id}")
             else:
                 print(f"[{self.env.now:.2f}] ❌ {agv_id}: 无法将产品 {product.id} 交付到 {to_station_id}")
             
@@ -374,8 +378,8 @@ class Factory:
                     'precision_level': detailed_status.precision_level,
                     'tool_wear_level': detailed_status.tool_wear_level
                 })
-        elif device_id in self.agvs:
-            agv = self.agvs[device_id]
+            elif device_id in self.agvs:
+                agv = self.agvs[device_id]
                 status_dict.update({
                     'position': {'x': agv.position[0], 'y': agv.position[1]},
                     'battery_level': detailed_status.battery_level,

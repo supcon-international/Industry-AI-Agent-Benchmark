@@ -1,6 +1,7 @@
 # simulation/entities/base.py
 import simpy
 import random
+from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Tuple, Optional
 from dataclasses import dataclass
@@ -218,4 +219,36 @@ class Vehicle(Device):
             "battery_level": random.uniform(80.0, 100.0),
             "position_accuracy": random.uniform(95.0, 100.0),
             "load_weight": 0.0
-        }) 
+        })
+
+class BaseConveyor(ABC):
+    """
+    Conveyor的抽象基类，定义所有Conveyor必须实现的接口
+    
+    所有Conveyor子类都应该实现这些方法，确保一致的接口
+    """
+    
+    @abstractmethod
+    def push(self, product):
+        """将产品放入传送带，满时自动阻塞"""
+        pass
+
+    @abstractmethod
+    def pop(self):
+        """从传送带取出产品，空时自动阻塞"""
+        pass
+
+    @abstractmethod
+    def is_full(self):
+        """检查传送带是否已满（用于状态查询，不用于流控）"""
+        pass
+
+    @abstractmethod
+    def is_empty(self):
+        """检查传送带是否为空"""
+        pass
+
+    @abstractmethod
+    def get_buffer(self):
+        """获取buffer对象"""
+        pass 

@@ -60,7 +60,8 @@ class RawMaterial(Station):
         product.add_history(self.env.now, f"Raw material created at {self.id}")
         
         print(f"[{self.env.now:.2f}] 🔧 {self.id}: 创建原料 {product.id} (类型: {product_type})")
-        self.add_product_to_buffer(product)
+        # 原料仓库容量大，直接put不会阻塞，保持简单
+        self.buffer.put(product)
         return product
 
     def is_full(self) -> bool:
@@ -121,7 +122,8 @@ class Warehouse(Station):
 
     def add_product_to_buffer(self, product: Product):
         """AGV向成品仓库投放产品"""
-        self.buffer.put(product)
+        # SimPy Store自动处理容量，无需手动检查
+        yield self.buffer.put(product)
         
         # record finished product statistics
         self.stats["products_received"] += 1

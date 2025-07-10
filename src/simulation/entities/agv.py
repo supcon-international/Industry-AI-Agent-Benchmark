@@ -170,8 +170,9 @@ class AGV(Vehicle):
             print(f"[{self.env.now:.2f}] {self.id}: Error - Product {product_id} not in payload.")
             return None
         
-    def load_from(self, device, buffer_type=None, action_time_factor=1):
-        """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)"""
+    def load_from(self, device, buffer_type=None, product_id=None, action_time_factor=1):
+        """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
+        """
         # 检查电量
         if self.is_battery_low():
             return False, f"{self.id}电量过低({self.battery_level:.1f}%)，无法执行取货操作", None
@@ -202,7 +203,16 @@ class AGV(Vehicle):
                     feedback = f"{device.id} {buffer_name}为空，无法取货"
                     return False, feedback, None
                     
-                product = yield target_buffer.get()
+                if product_id:
+                    for item in target_buffer.items:
+                        if item.id == product_id:
+                            product = item
+                            break
+                    if not product:
+                        feedback = f"产品{product_id}不存在"
+                        return False, feedback, None
+                else:
+                    product = yield target_buffer.get()
                 success = True
                 
             # Station (父类)
@@ -210,8 +220,14 @@ class AGV(Vehicle):
                 if len(device.buffer.items) == 0:
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
-                    
-                product = yield device.buffer.get()
+
+                if product_id:
+                    for item in device.buffer.items:
+                        if item.id == product_id:
+                            product = item
+                            break
+                else:
+                    product = yield device.buffer.get()
                 success = True
                 
             # TripleBufferConveyor
@@ -220,8 +236,13 @@ class AGV(Vehicle):
                 if device.is_empty(buffer_name):
                     feedback = f"{device.id} {buffer_name}缓冲区为空，无法取货"
                     return False, feedback, None
-                    
-                product = yield device.pop(buffer_name)
+                if product_id:
+                    for item in device.get_buffer(buffer_name).items:
+                        if item.id == product_id:
+                            product = item
+                            break
+                else:
+                    product = yield device.pop(buffer_name)
                 success = True
                 
             # Conveyor
@@ -229,8 +250,14 @@ class AGV(Vehicle):
                 if device.is_empty():
                     feedback = f"{device.id}缓冲区为空，无法取货"
                     return False, feedback, None
-                    
-                product = yield device.pop()
+
+                if product_id:
+                    for item in device.buffer.items:
+                        if item.id == product_id:
+                            product = item
+                            break
+                else:
+                    product = yield device.pop()
                 success = True
                 
             else:
@@ -277,30 +304,26 @@ class AGV(Vehicle):
             if isinstance(device, QualityChecker):
                 if buffer_type == "output_buffer":
                     # Default use output_buffer
-                    success = device.add_product_to_outputbuffer(product)
+                    success = yield self.env.process(device.add_product_to_outputbuffer(product))
                 else:
-                    success = device.add_product_to_buffer(product)
+                    success = yield self.env.process(device.add_product_to_buffer(product))
                         
             # Station (父类)
             elif isinstance(device, Station):
-                success = device.add_product_to_buffer(product)
+                success = yield self.env.process(device.add_product_to_buffer(product))
                     
             # TripleBufferConveyor (先检查子类)
             elif isinstance(device, TripleBufferConveyor):
                 buffer_type = buffer_type if buffer_type else "main"
-                if not device.is_full(buffer_type):
-                    yield device.push(product, buffer_type)
-                    success = True
-                else:
-                    feedback = f"{device.id} {buffer_type}缓冲区已满，卸载失败"
+                # SimPy push()会自动阻塞直到有空间，无需手动检查is_full
+                yield device.push(product, buffer_type)
+                success = True
                 
             # Conveyor (父类)
             elif isinstance(device, Conveyor):
-                if not device.is_full():
-                    yield device.push(product)
-                    success = True
-                else:
-                    feedback = f"{device.id}缓冲区已满，卸载失败"
+                # SimPy push()会自动阻塞直到有空间，无需手动检查is_full
+                yield device.push(product)
+                success = True
                 
             else:
                 feedback = f"不支持的设备类型: {type(device).__name__}"

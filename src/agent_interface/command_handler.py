@@ -66,6 +66,10 @@ class CommandHandler:
                 self._handle_test_command(target, params)
             elif action == "move_agv":
                 self._handle_move_agv(target, params)
+            elif action == "load_agv":
+                self._handle_load_agv(target, params)
+            elif action == "unload_agv":
+                self._handle_unload_agv(target, params)
             elif action == "agv_action_sequence":
                 self._handle_agv_action_sequence(target, params)
             elif action == "request_maintenance":
@@ -119,6 +123,38 @@ class CommandHandler:
         
         # Schedule the movement in the simulation
         self.factory.env.process(self.factory.move_agv(agv_id, closest_point, destination_id))
+
+    def _handle_load_agv(self, agv_id: str, params: Dict[str, Any]):
+        """Handle AGV load commands.
+        params: {device_id: str, buffer_type: str}
+        """
+        device_id = params.get("device_id")
+        buffer_type = params.get("buffer_type")
+        if not device_id:
+            logger.error("load_agv command missing 'device_id' parameter")
+            return
+        if agv_id not in self.factory.agvs:
+            logger.error(f"AGV {agv_id} not found in factory")
+            return
+        agv = self.factory.agvs[agv_id]
+        device = self.factory.stations[device_id]
+        self.factory.env.process(agv.load_from(device, buffer_type))
+
+    def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any]):
+        """Handle AGV unload commands.
+        params: {device_id: str, buffer_type: str}
+        """
+        device_id = params.get("device_id")
+        buffer_type = params.get("buffer_type")
+        if not device_id:
+            logger.error("unload_agv command missing 'device_id' parameter")
+            return
+        if agv_id not in self.factory.agvs:
+            logger.error(f"AGV {agv_id} not found in factory")
+            return
+        agv = self.factory.agvs[agv_id]
+        device = self.factory.stations[device_id]
+        self.factory.env.process(agv.unload_to(device, buffer_type))
 
     def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any]):
         """支持agent一次下发一串AGV动作，仿真端按序执行并反馈。params: {actions: [{type, args}]}
