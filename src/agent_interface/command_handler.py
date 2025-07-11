@@ -473,11 +473,6 @@ class CommandHandler:
         if success:
             target_station = self.factory.stations[target_station_id]
             
-            # Check if target station has capacity
-            if hasattr(target_station, 'buffer') and hasattr(target_station.buffer, 'items'):
-                if len(target_station.buffer.items) >= target_station.buffer.capacity:
-                    logger.warning(f"⚠️ Target station {target_station_id} buffer is full, rerouting may be delayed")
-            
             # Notify the target station about incoming order (if supported)
             if hasattr(target_station, 'notify_incoming_order'):
                 target_station.notify_incoming_order(order_id)

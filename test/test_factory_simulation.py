@@ -12,7 +12,8 @@ import json
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src.simulation.factory import Factory, MOCK_LAYOUT_CONFIG
+from src.simulation.factory import Factory
+from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 
@@ -23,7 +24,7 @@ def test_basic_factory_initialization():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         
         # 验证设备数量
         assert len(factory.stations) == 4, f"预期4个Station，实际{len(factory.stations)}"
@@ -47,7 +48,7 @@ def test_order_generation():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         
         # 运行30秒查看订单生成
         print("🚀 运行30秒观察订单生成...")
@@ -76,7 +77,7 @@ def test_fault_injection():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         
         # 手动注入一个故障进行测试
         print("💥 手动注入故障进行测试...")
@@ -107,7 +108,7 @@ def test_command_handling():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         
         # 先注入一个故障
         factory.fault_system.inject_random_fault("StationB", None)
@@ -151,7 +152,7 @@ def test_kpi_calculation():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         
         # 运行一段时间生成数据
         print("📈 运行60秒生成KPI数据...")

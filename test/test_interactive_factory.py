@@ -13,7 +13,8 @@ from datetime import datetime
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src.simulation.factory import Factory, MOCK_LAYOUT_CONFIG
+from src.simulation.factory import Factory
+from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 from src.game_logic.fault_system import FaultType
@@ -251,7 +252,7 @@ def main():
         # 初始化工厂
         print("🏭 正在初始化工厂...")
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+        factory = Factory(load_factory_config(), mqtt_client)
         agent = InteractiveFactoryAgent(factory)
         
         print("✅ 工厂初始化完成!")

@@ -58,8 +58,8 @@ class Station(Device):
         position: Tuple[int, int],
         buffer_size: int = 1,  # 默认容量为1
         processing_times: Dict[str, Tuple[int, int]] = {},
-        product_transfer_callback: Optional[Callable] = None,
-        product_scrap_callback: Optional[Callable] = None,
+        # product_transfer_callback: Optional[Callable] = None,
+        # product_scrap_callback: Optional[Callable] = None,
         downstream_conveyor=None,
         fault_system=None
     ):
@@ -69,8 +69,8 @@ class Station(Device):
         self.processing_times = processing_times
         
         # 产品流转回调函数
-        self.product_transfer_callback = product_transfer_callback
-        self.product_scrap_callback = product_scrap_callback
+        # self.product_transfer_callback = product_transfer_callback
+        # self.product_scrap_callback = product_scrap_callback
         
         # 工站特定属性初始化
         self._specific_attributes.update({

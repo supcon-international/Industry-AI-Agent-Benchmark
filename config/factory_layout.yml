@@ -2,8 +2,8 @@
 # This file defines the physical layout and parameters of the factory simulation
 
 factory:
-  name: "SUPCON AdventureX Factory"
-  description: "智能制造仿真工厂"
+  name: "SUPCON AdventureX NLDF"
+  description: "自然语言驱动智能制造仿真工厂"
 
 # 路径点定义 (x, y坐标)
 path_points:
@@ -17,6 +17,31 @@ path_points:
   P7: [78, 20]   # QualityCheck前
   P8: [85, 20]   # QualityCheck后
   P9: [10, 10]   # 维护区域
+
+# AGV独立路径点
+lower_path_points:
+  LP0: [5, 15] # raw material warehouse
+  LP1: [15, 15] # StationA
+  LP2: [25, 15] # Conveyor_AB
+  LP3: [35, 15] # StationB
+  LP4: [45, 15] # Conveyor_BC
+  LP5: [55, 15] # StationC 
+  LP6: [65, 15] # Conveyor_CQ
+  LP7: [75, 15] # QualityChecker
+  LP8: [95, 15] # Warehouse
+  LC1: [10, 10] # Charging Area
+
+upper_path_points:
+  UP0: [5, 25]
+  UP1: [15, 25]
+  UP2: [25, 25]
+  UP3: [35, 25]
+  UP4: [45, 25]
+  UP5: [55, 25]
+  UP6: [65, 25]
+  UP7: [75, 25]
+  UP8: [95, 25]
+  UC1: [10, 30]
 
 # 路径段定义 (单向路径)
 path_segments:
@@ -37,73 +62,143 @@ path_segments:
   - [P8, P7]
   - [P7, P6]
 
+agv_paths:
+  AGV_1:
+    zone: "lower"
+    path_points: "lower_path_points"
+    segments:
+      - ["LP0", "LP1"]
+      - ["LP1", "LP2"]
+      - ["LP2", "LP3"]
+      - ["LP3", "LP4"]
+      - ["LP4", "LP5"]
+      - ["LP5", "LP6"]
+      - ["LP6", "LP7"]
+      - ["LP7", "LP8"]
+      - ["LP8", "LP7"]
+      - ["LP7", "LP6"]
+      - ["LP6", "LP5"]
+      - ["LP5", "LP4"]
+      - ["LP4", "LP3"]
+      - ["LP3", "LP2"]
+      - ["LP2", "LP1"]
+      - ["LP1", "LP0"]
+      - ["LP0", "LC1"]
+      - ["LC1", "LP0"]
+  AGV_2:
+    zone: "upper"
+    path_points: "upper_path_points"
+    segments:
+      - ["UP0", "UP1"]
+      - ["UP1", "UP2"]
+      - ["UP2", "UP3"]
+      - ["UP3", "UP4"]
+      - ["UP4", "UP5"]
+      - ["UP5", "UP6"]
+      - ["UP6", "UP7"]
+      - ["UP7", "UP8"]
+      - ["UP8", "UP7"]
+      - ["UP7", "UP6"]
+      - ["UP6", "UP5"]
+      - ["UP5", "UP4"]
+      - ["UP4", "UP3"]
+      - ["UP3", "UP2"]
+      - ["UP2", "UP1"]
+      - ["UP1", "UP0"]
+      - ["UP0", "UC1"]
+      - ["UC1", "UP0"]
+
 # 工站配置
 stations:
   - id: "StationA"
-    name: "组装工站"
+    # name: "组装工站"
     position: [15, 20]
     buffer_size: 3
     processing_times:  # 产品类型: [最小时间, 最大时间] (秒)
       P1: [30, 45]
       P2: [40, 60]
       P3: [35, 50]
-    precision_level: 98.5  # 基础精度水平 (%)
-    maintenance_cost: 150  # 维修基础成本
+    # precision_level: 98.5  # 基础精度水平 (%)
+    # maintenance_cost: 150  # 维修基础成本
     
   - id: "StationB"
-    name: "焊接工站"
+    # name: "焊接工站"
     position: [35, 20]
     buffer_size: 3
     processing_times:
       P1: [45, 60]
       P2: [60, 80]
       P3: [50, 70]
-    precision_level: 97.0
-    maintenance_cost: 200
+    # precision_level: 97.0
+    # maintenance_cost: 200
     
   - id: "StationC"
-    name: "测试工站"
+    # name: "测试工站"
     position: [55, 20]
     buffer_size: 3
     processing_times:
       P1: [20, 30]
       P2: [30, 40]
       P3: [25, 35]
-    precision_level: 99.0
-    maintenance_cost: 120
+    # precision_level: 99.0
+    # maintenance_cost: 120
     
   - id: "QualityCheck"
-    name: "质量检测站"
+    # name: "质量检测站"
     position: [75, 20]
     buffer_size: 2
     processing_times:
       P1: [15, 25]
       P2: [20, 30]
       P3: [20, 30]
-    precision_level: 99.8
-    maintenance_cost: 180
+    output_buffer_capacity: 3
+    # precision_level: 99.8
+    # maintenance_cost: 180
 
 # AGV配置
 agvs:
   - id: "AGV_1"
-    name: "智能搬运车1号"
-    initial_position: [10, 15]
+    position: [10, 15] # initial position
     speed_mps: 2.0  # 移动速度 (米/秒)
-    battery_level: 100  # 电池容量 (%)
-    battery_consumption_rate: 0.5  # 每秒消耗 (%)
-    charging_rate: 2.0  # 充电速率 (%/秒)
-    payload_capacity: 5  # 最大载货数量
-    maintenance_cost: 100
+    payload_capacity: 2  # 最大载货数量
+    low_battery_threshold: 5.0  # 低电量阈值
+    charging_point: [10, 10]  # 充电点坐标
+    charging_speed: 3.33  # 充电速度(30秒充满)
+    battery_consumption_per_meter: 0.1  # 每米消耗0.1%电量
+    battery_consumption_per_action: 0.5  # 每次操作消耗0.5%电量
     
   - id: "AGV_2"
-    name: "智能搬运车2号"
-    initial_position: [10, 25]
+    position: [10, 25]
     speed_mps: 2.0
-    battery_level: 100
-    battery_consumption_rate: 0.5
-    charging_rate: 2.0
-    payload_capacity: 5
-    maintenance_cost: 100
+    payload_capacity: 2
+    low_battery_threshold: 5.0
+    charging_point: [10, 10]
+    charging_speed: 3.33
+    battery_consumption_per_meter: 0.1
+    battery_consumption_per_action: 0.5
+
+conveyors:
+  - id: "Conveyor_AB"
+    # position: [25, 20]
+    capacity: 3
+
+  - id: "Conveyor_BC"
+    # position: [45, 20]
+    capacity: 3
+
+  - id: "Conveyor_CQ"
+    # position: [65, 20]
+    main_capacity: 2
+    upper_capacity: 2
+    lower_capacity: 2
+
+warehouses:
+  - id: "RawMaterial"
+    position: [0, 20]
+    buffer_size: 100
+
+  - id: "Warehouse"
+    position: [95, 20]
 
 # 生产参数
 production:

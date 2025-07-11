@@ -3,6 +3,9 @@ import simpy
 import random
 from typing import Dict, List, Tuple, Optional
 
+from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
+from src.simulation.entities.base import BaseConveyor
+from src.simulation.entities.warehouse import Warehouse, RawMaterial
 from src.simulation.entities.station import Station
 from src.simulation.entities.agv import AGV
 from src.simulation.entities.quality_checker import QualityChecker
@@ -12,21 +15,9 @@ from src.game_logic.kpi_calculator import KPICalculator
 from src.game_logic.state_space_manager import ComplexStateSpaceManager
 from src.utils.mqtt_client import MQTTClient
 from src.unity_interface.real_time_publisher import RealTimePublisher
-from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
 
 # Import configuration loader
-from src.utils.config_loader import get_legacy_layout_config
-
-# Load configuration from YAML file instead of hardcoding
-def get_layout_config():
-    """Get factory layout configuration from YAML file."""
-    try:
-        return get_legacy_layout_config()
-    except Exception as e:
-        print(f"Warning: Failed to load configuration from YAML, using fallback: {e}")
-
-# For backward compatibility, provide the same interface
-MOCK_LAYOUT_CONFIG = get_layout_config()
+from src.utils.config_loader import load_factory_config
 
 class Factory:
     """
@@ -39,6 +30,11 @@ class Factory:
         
         self.stations: Dict[str, Station] = {}
         self.agvs: Dict[str, AGV] = {}
+        self.conveyors: Dict[str, BaseConveyor] = {}
+        
+        # Warehouse attributes - will be set during device creation
+        self.warehouse: Optional[Warehouse] = None
+        self.raw_material: Optional[RawMaterial] = None
         
         # Resources for AGV path collision avoidance
         self.path_points = self.layout['path_points']
@@ -54,22 +50,33 @@ class Factory:
             "scrap_reasons": {}
         }
         
-        self.conveyor_ab = Conveyor(self.env, id="conveyor_ab", capacity=5)  # A→B
-        self.conveyor_bc = Conveyor(self.env, id="conveyor_bc", capacity=5)  # B→C
-        self.conveyor_cq = TripleBufferConveyor(self.env, id="conveyor_cq", main_capacity=5, upper_capacity=3, lower_capacity=3)  # C→QualityCheck
-        
         # Create devices first
         self._create_devices()
-        self._create_path_resources()
         
         # Create a combined devices dictionary for fault system
         self.all_devices = {}
         self.all_devices.update(self.stations)
         self.all_devices.update(self.agvs)
-        
+        self.all_devices.update(self.conveyors)
+
+        if self.warehouse is not None:
+            self.all_devices[self.warehouse.id] = self.warehouse
+
+        if self.raw_material is not None:
+            self.all_devices[self.raw_material.id] = self.raw_material
+            self.order_generator = OrderGenerator(self.env, self.mqtt_client, self.raw_material)
+        else:
+            raise ValueError("RawMaterial device not found in configuration")
+
         # Game logic components (fault system needs device references)
-        self.order_generator = OrderGenerator(self.env, self.mqtt_client)
         self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)  # 传递设备引用
+        
+        # Set fault_system reference for QualityChecker after it's created
+        for device in self.all_devices.values():
+            if hasattr(device, 'fault_system'):
+                device.fault_system = self.fault_system
+                print(f"[{self.env.now:.2f}] 🔍 Set fault_system reference for {device.id}")
+        
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
         self.state_space_manager = ComplexStateSpaceManager(self.env, self, self.fault_system)
         
@@ -83,45 +90,66 @@ class Factory:
         self.unity_publisher = RealTimePublisher(self.env, self.mqtt_client, self)
         print(f"[{self.env.now:.2f}] 🎮 Unity real-time publisher initialized (100ms AGV updates)")
         
-        
         self._bind_conveyors_to_stations()
         self._setup_conveyor_downstreams()
 
     def _create_devices(self):
         """Instantiates all devices based on the layout configuration."""
+        
         for station_cfg in self.layout['stations']:
-            # 🔍 特殊处理QualityCheck工站，使用QualityChecker类
+            # Quality checker station
             if station_cfg['id'] == 'QualityCheck':
                 station = QualityChecker(
                     env=self.env,
-                    id=station_cfg['id'],
-                    position=station_cfg['position'],
-                    buffer_size=station_cfg['buffer_size'],
-                    processing_times=station_cfg['processing_times'],
-                    # output_buffer_capacity=station_cfg['output_buffer_capacity'],
-                    fault_system=self.fault_system
+                    **station_cfg
                 )
                 print(f"[{self.env.now:.2f}] 🔍 Created QualityChecker: {station_cfg['id']}")
             else:
-                # 创建普通工站，传入回调函数
+                # create normal station
                 station = Station(
                     env=self.env,
-                    product_transfer_callback=self._handle_product_transfer,
-                    product_scrap_callback=self._handle_product_scrap,
+                    # product_transfer_callback=self._handle_product_transfer,
+                    # product_scrap_callback=self._handle_product_scrap,
                     **station_cfg
                 )
                 print(f"[{self.env.now:.2f}] 🏭 Created Station: {station_cfg['id']}")
-                
+            
             self.stations[station.id] = station
-            
+        
+        # create AGV
         for agv_cfg in self.layout['agvs']:
-            # Set initial position based on a path point if not explicitly defined
-            if 'position_id' in agv_cfg:
-                agv_cfg['position'] = self.path_points[agv_cfg['position_id']]
-            
             agv = AGV(self.env, **agv_cfg)
             self.agvs[agv.id] = agv
             print(f"[{self.env.now:.2f}] 🚛 Created AGV: {agv_cfg['id']}")
+        
+        # create conveyor
+        for conveyor_cfg in self.layout['conveyors']:
+            if conveyor_cfg['id'] == 'Conveyor_CQ':
+                conveyor = TripleBufferConveyor(self.env, **conveyor_cfg)
+            elif conveyor_cfg['id'] == 'Conveyor_AB':
+                conveyor = Conveyor(self.env, **conveyor_cfg)
+            elif conveyor_cfg['id'] == 'Conveyor_BC':
+                conveyor = Conveyor(self.env, **conveyor_cfg)
+            else:
+                raise ValueError(f"Unknown conveyor type: {conveyor_cfg['id']}")
+            
+            self.conveyors[conveyor.id] = conveyor
+            print(f"[{self.env.now:.2f}] 🚛 Created Conveyor: {conveyor_cfg['id']}")
+        
+        # create warehouse
+        for warehouse_cfg in self.layout['warehouses']:
+            if warehouse_cfg['id'] == 'RawMaterial':
+                warehouse = RawMaterial(self.env, **warehouse_cfg)
+                self.raw_material = warehouse  # Store dedicated reference
+            elif warehouse_cfg['id'] == 'Warehouse':
+                warehouse = Warehouse(self.env, **warehouse_cfg)
+                self.warehouse = warehouse  # Store dedicated reference
+            else:
+                raise ValueError(f"Unknown warehouse type: {warehouse_cfg['id']}")
+            
+            # Also add to stations dict for compatibility
+            self.stations[warehouse.id] = warehouse
+            print(f"[{self.env.now:.2f}] 🏪 Created Warehouse: {warehouse_cfg['id']}")
 
     def _handle_product_transfer(self, product, from_station_id: str, to_station_id: str):
         """Handle product transfer request from station - schedule AGV transport"""
@@ -206,7 +234,8 @@ class Factory:
     def _find_available_agv(self) -> Optional[str]:
         """Find an available AGV for transport task"""
         for agv_id, agv in self.agvs.items():
-            if agv.status.value == "idle" and len(agv.payload) == 0:
+            # Use payload.items to check if empty (SimPy Store behavior)
+            if agv.status.value == "idle" and len(agv.payload.items) == 0:
                 return agv_id
         return None
 
@@ -238,9 +267,11 @@ class Factory:
             yield self.env.process(self._move_agv_to_position(agv_id, delivery_point))
             
             # Step 4: Unload product to destination station
-            unloaded_product = agv.unload_product(product.id)
+            unloaded_product = yield agv.unload_product(product.id)
             if unloaded_product:
-                delivery_success = yield self.env.process(to_station.add_product_to_buffer(unloaded_product))
+                # add_product_to_buffer is a generator function, need to call it properly
+                yield self.env.process(to_station.add_product_to_buffer(unloaded_product))
+                delivery_success = True  # If no exception, delivery was successful
                 if delivery_success:
                     product.add_history(self.env.now, f"Delivered to {to_station_id} by {agv_id}")
                     print(f"[{self.env.now:.2f}] ✅ {agv_id}: 成功运输产品 {product.id} 到 {to_station_id}")
@@ -271,11 +302,6 @@ class Factory:
         # In a more complex system, this would use pathfinding
         yield self.env.process(agv.move_to(target_position, self.path_points))
 
-    def _create_path_resources(self):
-        """Creates a SimPy resource for each path segment to manage access."""
-        for start, end in self.layout['path_segments']:
-            path_key = f"{start}_{end}"
-            self.path_resources[path_key] = simpy.Resource(self.env, capacity=1)
 
     def move_agv(self, agv_id: str, start_point_id: str, end_point_id: str):
         """
@@ -555,7 +581,7 @@ class Factory:
                 "status": agv.status.value,
                 "position": agv.position,
                 "battery_level": getattr(agv, 'battery_level', 100.0),
-                "payload_count": len(agv.payload)
+                "payload_count": len(agv.payload.items)  # Use .items for SimPy Store
             }
         
         return {
@@ -570,26 +596,26 @@ class Factory:
     def _bind_conveyors_to_stations(self):
         """Bind conveyors to stations according to the process flow."""
         # StationA → conveyor_ab
-        if 'StationA' in self.stations:
-            self.stations['StationA'].downstream_conveyor = self.conveyor_ab
+        if 'StationA' in self.stations and 'Conveyor_AB' in self.conveyors:
+            self.stations['StationA'].downstream_conveyor = self.conveyors['Conveyor_AB']
         # StationB → conveyor_bc
-        if 'StationB' in self.stations:
-            self.stations['StationB'].downstream_conveyor = self.conveyor_bc
+        if 'StationB' in self.stations and 'Conveyor_BC' in self.conveyors:
+            self.stations['StationB'].downstream_conveyor = self.conveyors['Conveyor_BC']
         # StationC → conveyor_cq (TripleBufferConveyor)
-        if 'StationC' in self.stations:
-            self.stations['StationC'].downstream_conveyor = self.conveyor_cq
+        if 'StationC' in self.stations and 'Conveyor_CQ' in self.conveyors:
+            self.stations['StationC'].downstream_conveyor = self.conveyors['Conveyor_CQ']
 
     def _setup_conveyor_downstreams(self):
         """Set downstream stations for conveyors to enable auto-transfer."""
         # conveyor_ab → StationB
-        if 'StationB' in self.stations:
-            self.conveyor_ab.set_downstream_station(self.stations['StationB'])
+        if 'StationB' in self.stations and 'Conveyor_AB' in self.conveyors:
+            self.conveyors['Conveyor_AB'].set_downstream_station(self.stations['StationB'])
         # conveyor_bc → StationC
-        if 'StationC' in self.stations:
-            self.conveyor_bc.set_downstream_station(self.stations['StationC'])
+        if 'StationC' in self.stations and 'Conveyor_BC' in self.conveyors:
+            self.conveyors['Conveyor_BC'].set_downstream_station(self.stations['StationC'])
         # conveyor_cq → QualityCheck
-        if 'QualityCheck' in self.stations:
-            self.conveyor_cq.set_downstream_station(self.stations['QualityCheck'])
+        if 'QualityCheck' in self.stations and 'Conveyor_CQ' in self.conveyors:
+            self.conveyors['Conveyor_CQ'].set_downstream_station(self.stations['QualityCheck'])
 
 
 # Example of how to run the factory simulation
@@ -604,20 +630,22 @@ if __name__ == '__main__':
     mqtt_client.connect()
     print(f"✅ Connected to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
     
-    factory = Factory(MOCK_LAYOUT_CONFIG, mqtt_client)
+    # 加载配置
+    try:
+        from src.utils.config_loader import load_factory_config
+        layout_config = load_factory_config()
+    except Exception as e:
+        print(f"❌ Failed to load factory configuration: {e}")
+        raise e
     
-    # Example usage: create a dummy process to test AGV movement
-    def test_agv_movement(factory_env):
-        # Move AGV_1 from P0 to P1
-        p0 = factory.path_points['P0']
-        factory.agvs['AGV_1'].position = p0
-        yield factory_env.process(factory.move_agv('AGV_1', 'P0', 'P1'))
-
-        # Try to move AGV_2 on the same path, it should wait if AGV_1 is slow
-        # (for this test, we just start it right after)
-        p0_agv2 = factory.path_points['P0']
-        factory.agvs['AGV_2'].position = p0_agv2
-        factory_env.process(factory.move_agv('AGV_2', 'P0', 'P1'))
-
-    factory.env.process(test_agv_movement(factory.env))
-    factory.run(until=100) 
+    factory = Factory(layout_config, mqtt_client)
+    
+    # Simple test - just create the factory and run briefly
+    print(f"[{factory.env.now:.2f}] 🎉 Factory created successfully!")
+    print(f"[{factory.env.now:.2f}] 📊 Stations: {list(factory.stations.keys())}")
+    print(f"[{factory.env.now:.2f}] 🚛 AGVs: {list(factory.agvs.keys())}")
+    print(f"[{factory.env.now:.2f}] 🛤️  Conveyors: {list(factory.conveyors.keys())}")
+    print(f"[{factory.env.now:.2f}] 🏪 Warehouses: RawMaterial={factory.raw_material.id if factory.raw_material else None}, Warehouse={factory.warehouse.id if factory.warehouse else None}")
+    
+    # Test simple simulation for 30 seconds
+    factory.run(until=20) 

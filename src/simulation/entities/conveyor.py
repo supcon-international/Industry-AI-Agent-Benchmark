@@ -31,10 +31,8 @@ class Conveyor(BaseConveyor):
         self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
         self._auto_transfer_proc = None
+        self.transfer_time = 5.0 # 模拟搬运时间
         self.fault_system = None
-
-    def set_fault_system(self, fault_system):
-        self.fault_system = fault_system
 
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer."""
@@ -68,13 +66,10 @@ class Conveyor(BaseConveyor):
         """Auto-transfer products to downstream station's buffer if possible."""
         while True:
             if self.downstream_station is not None:
-                # Only transfer if both conveyor and downstream buffer are not empty/full
-                if self.buffer.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
-                    product = yield self.buffer.get()
-                    yield self.downstream_station.buffer.put(product)
-                    print(f"[{self.env.now:.2f}] Conveyor: moved product to {self.downstream_station.id}")
-                else:
-                    yield self.env.timeout(1.0)
+                product = yield self.buffer.get()
+                yield self.env.timeout(self.transfer_time) # 模拟搬运时间
+                yield self.downstream_station.buffer.put(product)
+                print(f"[{self.env.now:.2f}] Conveyor: moved product to {self.downstream_station.id}")
             else:
                 yield self.env.timeout(1.0)
 
@@ -87,13 +82,15 @@ class TripleBufferConveyor(BaseConveyor):
     All buffers use simpy.Store for event-driven simulation.
     """
     def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity):
-        self.id = id
         self.env = env
+        self.id = id
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
         self.downstream_station = None  # QualityCheck
         self._auto_transfer_proc = None
+        self.transfer_time = 5.0 # 模拟搬运时间
+        self.fault_system = None
 
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer from main_buffer."""
@@ -143,11 +140,9 @@ class TripleBufferConveyor(BaseConveyor):
         """Auto-transfer products from main_buffer to downstream station if possible."""
         while True:
             if self.downstream_station is not None:
-                if self.main_buffer.items and len(self.downstream_station.buffer.items) < self.downstream_station.buffer_size:
-                    product = yield self.main_buffer.get()
-                    yield self.downstream_station.buffer.put(product)
-                    print(f"[{self.env.now:.2f}] TripleBufferConveyor: moved product to {self.downstream_station.id}")
-                else:
-                    yield self.env.timeout(1.0)
+                product = yield self.main_buffer.get()
+                yield self.env.timeout(self.transfer_time) # 模拟搬运时间
+                yield self.downstream_station.buffer.put(product)
+                print(f"[{self.env.now:.2f}] TripleBufferConveyor: moved product to {self.downstream_station.id}")
             else:
                 yield self.env.timeout(1.0)

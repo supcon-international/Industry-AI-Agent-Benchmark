@@ -34,7 +34,8 @@ print = safe_print
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src.simulation.factory import Factory, MOCK_LAYOUT_CONFIG
+from src.simulation.factory import Factory
+from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 
@@ -62,7 +63,7 @@ class PerformanceBenchmark:
         safe_print(f"⚡ 仿真速度测试 (目标: {duration}秒)")
         safe_print("-" * 50)
         
-        factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        factory = Factory(load_factory_config(), self.mqtt_client)
         
         # 测量资源使用
         initial_resources = self.measure_system_resources()
@@ -143,7 +144,7 @@ class PerformanceBenchmark:
         safe_print("\n🧠 内存使用测试")
         safe_print("=" * 60)
         
-        factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        factory = Factory(load_factory_config(), self.mqtt_client)
         
         memory_snapshots = []
         test_points = [0, 60, 120, 300, 600]  # 不同时间点
@@ -192,7 +193,7 @@ class PerformanceBenchmark:
         safe_print("\n⚡ 事件处理速率测试")
         safe_print("=" * 60)
         
-        factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        factory = Factory(load_factory_config(), self.mqtt_client)
         
         # 运行较长时间收集足够的事件
         test_duration = 300
@@ -251,7 +252,7 @@ class PerformanceBenchmark:
         safe_print("\n🌐 状态空间性能测试")
         safe_print("=" * 60)
         
-        factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        factory = Factory(load_factory_config(), self.mqtt_client)
         
         # 运行一段时间让状态空间充分发展
         test_duration = 300

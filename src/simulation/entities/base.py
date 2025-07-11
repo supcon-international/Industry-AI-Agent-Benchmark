@@ -252,3 +252,8 @@ class BaseConveyor(ABC):
     def get_buffer(self):
         """获取buffer对象"""
         pass 
+
+    @abstractmethod
+    def set_downstream_station(self, station):
+        """设置下游工站"""
+        pass

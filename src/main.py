@@ -16,7 +16,8 @@ import sys
 import time
 from typing import Optional
 
-from src.simulation.factory import Factory, MOCK_LAYOUT_CONFIG
+from src.simulation.factory import Factory
+from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from src.agent_interface.command_handler import CommandHandler
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, LOG_LEVEL
@@ -51,7 +52,7 @@ class FactorySimulation:
         logger.info(f"📡 Connected to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
         
         # Create the factory with MQTT client
-        self.factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        self.factory = Factory(load_factory_config(), self.mqtt_client)
         logger.info(f"✅ Factory created with {len(self.factory.stations)} stations and {len(self.factory.agvs)} AGVs")
         logger.info("📋 Order generation, fault system, and KPI calculation initialized")
         

@@ -12,7 +12,8 @@ import random
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from src.simulation.factory import Factory, MOCK_LAYOUT_CONFIG
+from src.simulation.factory import Factory
+from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 from src.game_logic.fault_system import FaultType
@@ -23,7 +24,7 @@ class FaultDiagnosisDemo:
     def __init__(self):
         print("🚀 初始化故障诊断演示系统...")
         self.mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-        self.factory = Factory(MOCK_LAYOUT_CONFIG, self.mqtt_client)
+        self.factory = Factory(load_factory_config(), self.mqtt_client)
         print("✅ 系统初始化完成!")
 
     def demo_symptom_based_diagnosis(self):

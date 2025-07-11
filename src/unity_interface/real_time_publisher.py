@@ -136,7 +136,7 @@ class RealTimePublisher:
                             },
                             "isMoving": position_data.is_moving,
                             "batteryLevel": agv.battery_level,
-                            "payloadCount": len(agv.payload)
+                            "payloadCount": len(agv.payload.items)
                         }
                         
                         self.mqtt_client.publish(topic, json.dumps(message))
@@ -183,7 +183,7 @@ class RealTimePublisher:
                         'status': agv.status.value,
                         'battery_level': agv.battery_level,
                         'is_charging': agv.is_charging,
-                        'payload_count': len(agv.payload)
+                        'payload_count': len(agv.payload.items)
                     }
                     
                     previous_state = self.previous_device_states.get(f"{agv_id}_status", {})
