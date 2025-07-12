@@ -24,6 +24,8 @@ def test_basic_factory_initialization():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
+        mqtt_client.connect()
+        time.sleep(0.1) # allow time to connect
         factory = Factory(load_factory_config(), mqtt_client)
         
         # 验证设备数量
@@ -35,11 +37,10 @@ def test_basic_factory_initialization():
         print(f"   - Stations: {list(factory.stations.keys())}")
         print(f"   - AGVs: {list(factory.agvs.keys())}")
         print(f"   - Path points: {len(factory.path_points)}")
-        return True
         
     except Exception as e:
         print(f"❌ 工厂初始化失败: {e}")
-        return False
+        assert False, f"工厂初始化失败: {e}"
 
 def test_order_generation():
     """测试订单生成系统"""
@@ -48,6 +49,8 @@ def test_order_generation():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
+        mqtt_client.connect()
+        time.sleep(0.1) # allow time to connect
         factory = Factory(load_factory_config(), mqtt_client)
         
         # 运行30秒查看订单生成
@@ -64,11 +67,11 @@ def test_order_generation():
         for order_id, order in list(factory.kpi_calculator.active_orders.items())[:3]:
             print(f"   - {order_id}: {order.items_total}件订单")
 
-        return stats.total_orders > 0
+        assert stats.total_orders > 0
         
     except Exception as e:
         print(f"❌ 订单生成测试失败: {e}")
-        return False
+        assert False, f"订单生成测试失败: {e}"
 
 def test_fault_injection():
     """测试故障注入系统"""
@@ -77,6 +80,8 @@ def test_fault_injection():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
+        mqtt_client.connect()
+        time.sleep(0.1) # allow time to connect
         factory = Factory(load_factory_config(), mqtt_client)
         
         # 手动注入一个故障进行测试
@@ -95,11 +100,11 @@ def test_fault_injection():
             print(f"     隐藏原因: {fault.actual_root_cause}")
             print(f"     正确修复命令: {fault.correct_repair_command}")
             
-        return fault_stats['active_faults'] > 0
+        assert fault_stats['active_faults'] > 0
         
     except Exception as e:
         print(f"❌ 故障注入测试失败: {e}")
-        return False
+        assert False, f"故障注入测试失败: {e}"
 
 def test_command_handling():
     """测试命令处理系统"""
@@ -108,6 +113,8 @@ def test_command_handling():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
+        mqtt_client.connect()
+        time.sleep(0.1) # allow time to connect
         factory = Factory(load_factory_config(), mqtt_client)
         
         # 先注入一个故障
@@ -139,11 +146,9 @@ def test_command_handling():
         print(f"   - 惩罚修复时间: {result2.repair_time:.1f}秒")
         print(f"   - 受影响设备: {len(result2.affected_devices)}个")
         
-        return True
-        
     except Exception as e:
         print(f"❌ 命令处理测试失败: {e}")
-        return False
+        assert False, f"命令处理测试失败: {e}"
 
 def test_kpi_calculation():
     """测试KPI计算系统"""
@@ -152,6 +157,8 @@ def test_kpi_calculation():
     
     try:
         mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
+        mqtt_client.connect()
+        time.sleep(0.1) # allow time to connect
         factory = Factory(load_factory_config(), mqtt_client)
         
         # 运行一段时间生成数据
@@ -175,11 +182,9 @@ def test_kpi_calculation():
         print(f"   - 活跃订单: {len(factory.kpi_calculator.active_orders)}")
         print(f"   - 总成本: ¥{stats.material_costs + stats.energy_costs + stats.maintenance_costs + stats.scrap_costs:.2f}")
         
-        return True
-        
     except Exception as e:
         print(f"❌ KPI计算测试失败: {e}")
-        return False
+        assert False, f"KPI计算测试失败: {e}"
 
 def run_all_tests():
     """运行所有测试"""

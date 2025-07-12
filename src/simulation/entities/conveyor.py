@@ -3,36 +3,20 @@ import simpy
 from typing import Optional
 from src.simulation.entities.base import BaseConveyor
 from src.simulation.entities.product import Product
-
-"""
-Conveyor自动阻塞说明：
-==================
-
-Conveyor的push()方法基于SimPy Store实现，具有自动阻塞特性：
-- push()操作在buffer满时会自动阻塞，直到有空间
-- 调用者无需手动检查is_full()或使用while循环等待
-- 直接使用 yield conveyor.push(product) 即可
-
-这确保了：
-1. 线程安全的操作
-2. 准确的仿真时序
-3. 简洁的代码逻辑
-"""
+from typing import Tuple
 
 class Conveyor(BaseConveyor):
     """
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, id, capacity):
-        self.env = env
-        self.id = id
+    def __init__(self, env, id, capacity, position: Tuple[int, int], mqtt_client=None):
+        super().__init__(env, id, position, mqtt_client)
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
         self._auto_transfer_proc = None
         self.transfer_time = 5.0 # 模拟搬运时间
-        self.fault_system = None
 
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer."""
@@ -66,6 +50,11 @@ class Conveyor(BaseConveyor):
         """Auto-transfer products to downstream station's buffer if possible."""
         while True:
             if self.downstream_station is not None:
+                # Before putting, check if the station can operate
+                if not self.downstream_station.can_operate():
+                    yield self.env.timeout(1.0) # wait before retrying
+                    continue
+
                 product = yield self.buffer.get()
                 yield self.env.timeout(self.transfer_time) # 模拟搬运时间
                 yield self.downstream_station.buffer.put(product)
@@ -81,16 +70,14 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity):
-        self.env = env
-        self.id = id
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], mqtt_client=None):
+        super().__init__(env, id, position, mqtt_client)
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
         self.downstream_station = None  # QualityCheck
         self._auto_transfer_proc = None
         self.transfer_time = 5.0 # 模拟搬运时间
-        self.fault_system = None
 
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer from main_buffer."""
@@ -140,6 +127,11 @@ class TripleBufferConveyor(BaseConveyor):
         """Auto-transfer products from main_buffer to downstream station if possible."""
         while True:
             if self.downstream_station is not None:
+                # Before putting, check if the station can operate
+                if not self.downstream_station.can_operate():
+                    yield self.env.timeout(1.0) # wait before retrying
+                    continue
+                
                 product = yield self.main_buffer.get()
                 yield self.env.timeout(self.transfer_time) # 模拟搬运时间
                 yield self.downstream_station.buffer.put(product)

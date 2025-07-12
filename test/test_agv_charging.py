@@ -25,7 +25,11 @@ def test_battery_consumption():
         id="AGV_TEST",
         position=(0, 0),
         speed_mps=2.0,
-
+        path_points={
+            "LP0": (0, 0),
+            "LP1": (20, 20),
+            "LC1": (10, 10)
+        },
         low_battery_threshold=20.0,  # 提高阈值便于测试
         charging_point=(10, 10),
         battery_consumption_per_meter=2.0,  # 增加消耗便于测试
@@ -37,7 +41,7 @@ def test_battery_consumption():
         
         # 测试移动消耗
         print("\n--- 测试移动电量消耗 ---")
-        yield env.process(agv.move_to((20, 20)))  # 移动约28.3米，消耗约56.6%
+        yield env.process(agv.move_to("LP1"))  # 移动约28.3米，消耗约56.6%
         print(f"[{env.now:.2f}] 移动后电量: {agv.battery_level:.1f}%")
         
         # 测试装卸消耗
@@ -76,7 +80,12 @@ def test_voluntary_charging():
         speed_mps=5.0,  # 加快移动速度便于测试
         low_battery_threshold=5.0,
         charging_point=(10, 10),
-        charging_speed=10.0  # 加快充电速度便于测试
+        charging_speed=10.0,  # 加快充电速度便于测试
+        path_points={
+            "LP0": (50, 50),
+            "LP1": (10, 10),
+            "LC1": (10, 10)
+        }
     )
     
     # 手动设置较低电量
@@ -86,7 +95,7 @@ def test_voluntary_charging():
         print(f"[{env.now:.2f}] 开始测试，当前电量: {agv.battery_level:.1f}%")
         
         # 测试主动充电
-        yield env.process(agv.request_charge())
+        yield env.process(agv.voluntary_charge(target_level=80.0))
         
         print(f"[{env.now:.2f}] 充电完成，当前电量: {agv.battery_level:.1f}%")
         
@@ -115,7 +124,11 @@ def test_emergency_charging():
         speed_mps=2.0,
         low_battery_threshold=5.0,
         charging_point=(10, 10),
-        fault_system=mock_fault_system
+        path_points={
+            "LP0": (0, 0),
+            "LP1": (80, 80),
+            "LC1": (10, 10)
+        }
     )
     
     # 手动设置低电量
@@ -126,7 +139,7 @@ def test_emergency_charging():
         
         # 尝试移动，触发紧急充电
         print("\n--- 尝试长距离移动触发紧急充电 ---")
-        yield env.process(agv.move_to((0, 0)))  # 长距离移动
+        yield env.process(agv.move_to("LP0"))  # 长距离移动
         
         print(f"[{env.now:.2f}] 处理完成，当前电量: {agv.battery_level:.1f}%")
         
@@ -148,7 +161,12 @@ def test_low_battery_operations():
         id="AGV_LOW_BATTERY_TEST",
         position=(20, 20),
         speed_mps=2.0,
-        low_battery_threshold=10.0
+        low_battery_threshold=10.0,
+        path_points={
+            "LP0": (20, 20),
+            "LP1": (0, 0),
+            "LC1": (10, 10)
+        }
     )
     
     # 设置低电量
@@ -194,7 +212,12 @@ def test_battery_status_monitoring():
         id="AGV_MONITOR_TEST",
         position=(0, 0),
         speed_mps=2.0,
-        low_battery_threshold=15.0
+        low_battery_threshold=15.0,
+        path_points={
+            "LP0": (0, 0),
+            "LP1": (20, 20),
+            "LC1": (10, 10)
+        }
     )
     
     def test_process():

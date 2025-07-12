@@ -8,6 +8,8 @@ from enum import Enum
 class DeviceStatus(str, Enum):
     IDLE = "idle"
     PROCESSING = "processing"
+    MOVING = "moving"  # AGV移动状态
+    CHARGING = "charging"  # AGV充电状态
     ERROR = "error"
     MAINTENANCE = "maintenance"
     FROZEN = "frozen"  # 新增：因诊断错误而冻结的状态

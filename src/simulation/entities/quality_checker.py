@@ -35,7 +35,7 @@ class QualityChecker(Station):
         pass_threshold: float = 80.0,  # 合格阈值
         scrap_threshold: float = 40.0,  # 报废阈值
         output_buffer_capacity: int = 5,  # 新增，output buffer容量
-        fault_system=None  # 新增，便于buffer满时告警
+        mqtt_client=None
     ):
         # 默认检测时间
         if processing_times is None:
@@ -45,7 +45,7 @@ class QualityChecker(Station):
                 "P3": (10, 15)
             }
         
-        super().__init__(env, id, position, buffer_size, processing_times)
+        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client)
         
         self.pass_threshold = pass_threshold
         self.scrap_threshold = scrap_threshold
@@ -53,7 +53,6 @@ class QualityChecker(Station):
         # output buffer for storing passed/finished products, blocked when full
         self.output_buffer_capacity = output_buffer_capacity
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
-        self.fault_system = fault_system
         
         # 简单统计
         self.inspected_count = 0
@@ -137,9 +136,9 @@ class QualityChecker(Station):
             self.passed_count += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
             
-            # trigger fault system if output buffer is full
-            if self.fault_system and len(self.output_buffer.items) >= self.output_buffer_capacity:
-                self.fault_system.report_buffer_full(self.id, "output_buffer")
+            # trigger fault report if output buffer is full
+            if len(self.output_buffer.items) >= self.output_buffer_capacity:
+                self.report_buffer_full("output_buffer")
             
             yield self.output_buffer.put(product)
             print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")

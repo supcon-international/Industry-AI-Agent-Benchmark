@@ -101,10 +101,12 @@ class CommandHandler:
         return True
 
     def _handle_move_agv(self, agv_id: str, params: Dict[str, Any]):
-        """Handle AGV movement commands."""
-        destination_id = params.get("destination_id")
-        if not destination_id:
-            logger.error("move_agv command missing 'destination_id' parameter")
+        """Handle AGV movement commands.
+        params: {target_point: str}
+        """
+        target_point = params.get("target_point")
+        if not target_point:
+            logger.error("move_agv command missing 'target_point' parameter")
             return
             
         if agv_id not in self.factory.agvs:
@@ -114,15 +116,11 @@ class CommandHandler:
         # For now, we assume the AGV is already at a known path point.
         # In a complete implementation, we'd need to determine the AGV's current path point.
         agv = self.factory.agvs[agv_id]
-        current_pos = agv.position
         
-        # Find the closest path point to current position
-        closest_point = self._find_closest_path_point(current_pos)
-        
-        logger.info(f"Moving {agv_id} from {closest_point} to {destination_id}")
-        
+        logger.info(f"Moving {agv_id} from {agv.position} to {target_point}")
+
         # Schedule the movement in the simulation
-        self.factory.env.process(self.factory.move_agv(agv_id, closest_point, destination_id))
+        self.factory.env.process(agv.move_to(target_point))
 
     def _handle_load_agv(self, agv_id: str, params: Dict[str, Any]):
         """Handle AGV load commands.
@@ -182,13 +180,18 @@ class CommandHandler:
                 args = act.get('args', {})
                 feedback = ""
                 success = False
-                # move: args: {target_pos: [x, y]}
+                # move: args: {target_point: str}
                 if act_type == 'move':
-                    target_pos = tuple(args.get('target_pos', agv.position))
-                    path_points = self.factory.path_points if hasattr(self.factory, 'path_points') else {}
-                    yield from agv.move_to(target_pos, path_points)
-                    feedback = f"AGV已移动到{target_pos}"
-                    success = True
+                    # 支持两种格式：坐标位置或路径点名称
+                    if 'target_point' in args:
+                        # 使用路径点名称（推荐方式）
+                        target_point = args['target_point']
+                        yield from agv.move_to(target_point)
+                        feedback = f"AGV已移动到路径点{target_point}"
+                        success = True
+                    else:
+                        feedback = f"move命令缺少target_point参数"
+                        success = False
                 # load: args: {device_id, buffer_type}
                 elif act_type == 'load':
                     device_id = args.get('device_id')
@@ -516,19 +519,3 @@ class CommandHandler:
             logger.debug("Published available devices list")
         except Exception as e:
             logger.error(f"Failed to publish available devices: {e}")
-
-    def _find_closest_path_point(self, position: tuple) -> str:
-        """
-        Finds the closest path point to a given position.
-        This is a helper method for AGV movement commands.
-        """
-        min_distance = float('inf')
-        closest_point = None
-        
-        for point_id, point_pos in self.factory.path_points.items():
-            distance = ((position[0] - point_pos[0])**2 + (position[1] - point_pos[1])**2)**0.5
-            if distance < min_distance:
-                min_distance = distance
-                closest_point = point_id
-                
-        return closest_point or "P0"  # fallback to P0 if something goes wrong 

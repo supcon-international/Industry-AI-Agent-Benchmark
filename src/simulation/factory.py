@@ -50,11 +50,13 @@ class Factory:
             "scrap_reasons": {}
         }
         
+        # Initialize all_devices dictionary first
+        self.all_devices = {}
+        
         # Create devices first
         self._create_devices()
         
-        # Create a combined devices dictionary for fault system
-        self.all_devices = {}
+        # Update all_devices with created devices
         self.all_devices.update(self.stations)
         self.all_devices.update(self.agvs)
         self.all_devices.update(self.conveyors)
@@ -69,13 +71,7 @@ class Factory:
             raise ValueError("RawMaterial device not found in configuration")
 
         # Game logic components (fault system needs device references)
-        self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)  # 传递设备引用
-        
-        # Set fault_system reference for QualityChecker after it's created
-        for device in self.all_devices.values():
-            if hasattr(device, 'fault_system'):
-                device.fault_system = self.fault_system
-                print(f"[{self.env.now:.2f}] 🔍 Set fault_system reference for {device.id}")
+        self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)
         
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
         self.state_space_manager = ComplexStateSpaceManager(self.env, self, self.fault_system)
@@ -101,6 +97,7 @@ class Factory:
             if station_cfg['id'] == 'QualityCheck':
                 station = QualityChecker(
                     env=self.env,
+                    mqtt_client=self.mqtt_client,
                     **station_cfg
                 )
                 print(f"[{self.env.now:.2f}] 🔍 Created QualityChecker: {station_cfg['id']}")
@@ -108,8 +105,7 @@ class Factory:
                 # create normal station
                 station = Station(
                     env=self.env,
-                    # product_transfer_callback=self._handle_product_transfer,
-                    # product_scrap_callback=self._handle_product_scrap,
+                    mqtt_client=self.mqtt_client,
                     **station_cfg
                 )
                 print(f"[{self.env.now:.2f}] 🏭 Created Station: {station_cfg['id']}")
@@ -118,190 +114,60 @@ class Factory:
         
         # create AGV
         for agv_cfg in self.layout['agvs']:
-            agv = AGV(self.env, **agv_cfg)
+            agv = AGV(
+                env=self.env,
+                mqtt_client=self.mqtt_client,
+                **agv_cfg
+            )
             self.agvs[agv.id] = agv
             print(f"[{self.env.now:.2f}] 🚛 Created AGV: {agv_cfg['id']}")
         
         # create conveyor
         for conveyor_cfg in self.layout['conveyors']:
-            if conveyor_cfg['id'] == 'Conveyor_CQ':
-                conveyor = TripleBufferConveyor(self.env, **conveyor_cfg)
-            elif conveyor_cfg['id'] == 'Conveyor_AB':
-                conveyor = Conveyor(self.env, **conveyor_cfg)
-            elif conveyor_cfg['id'] == 'Conveyor_BC':
-                conveyor = Conveyor(self.env, **conveyor_cfg)
+            conveyor_id = conveyor_cfg['id']
+            # Common arguments for all conveyors
+            common_args = {
+                "env": self.env,
+                "id": conveyor_id,
+                "position": conveyor_cfg['position'],
+                "mqtt_client": self.mqtt_client
+            }
+            if conveyor_id == 'Conveyor_CQ':
+                conveyor = TripleBufferConveyor(
+                    main_capacity=conveyor_cfg['main_capacity'],
+                    upper_capacity=conveyor_cfg['upper_capacity'],
+                    lower_capacity=conveyor_cfg['lower_capacity'],
+                    **common_args
+                )
+            elif conveyor_id in ['Conveyor_AB', 'Conveyor_BC']:
+                conveyor = Conveyor(
+                    capacity=conveyor_cfg['capacity'],
+                    **common_args
+                )
             else:
-                raise ValueError(f"Unknown conveyor type: {conveyor_cfg['id']}")
+                raise ValueError(f"Unknown conveyor type: {conveyor_id}")
             
             self.conveyors[conveyor.id] = conveyor
-            print(f"[{self.env.now:.2f}] 🚛 Created Conveyor: {conveyor_cfg['id']}")
+            print(f"[{self.env.now:.2f}] 🚛 Created Conveyor: {conveyor_id}")
         
         # create warehouse
         for warehouse_cfg in self.layout['warehouses']:
+            # Common arguments for all warehouses
+            common_args = {
+                "env": self.env,
+                "mqtt_client": self.mqtt_client,
+                **warehouse_cfg
+            }
             if warehouse_cfg['id'] == 'RawMaterial':
-                warehouse = RawMaterial(self.env, **warehouse_cfg)
+                warehouse = RawMaterial(**common_args)
                 self.raw_material = warehouse  # Store dedicated reference
             elif warehouse_cfg['id'] == 'Warehouse':
-                warehouse = Warehouse(self.env, **warehouse_cfg)
+                warehouse = Warehouse(**common_args)
                 self.warehouse = warehouse  # Store dedicated reference
             else:
                 raise ValueError(f"Unknown warehouse type: {warehouse_cfg['id']}")
             
-            # Also add to stations dict for compatibility
-            self.stations[warehouse.id] = warehouse
             print(f"[{self.env.now:.2f}] 🏪 Created Warehouse: {warehouse_cfg['id']}")
-
-    def _handle_product_transfer(self, product, from_station_id: str, to_station_id: str):
-        """Handle product transfer request from station - schedule AGV transport"""
-        try:
-            # Create transport task
-            transport_task = {
-                "type": "transport",
-                "product": product,
-                "from_station": from_station_id,
-                "to_station": to_station_id,
-                "timestamp": self.env.now,
-                "priority": self._get_transport_priority(product, to_station_id)
-            }
-            
-            # Add to AGV task queue
-            yield self.agv_task_queue.put(transport_task)
-            print(f"[{self.env.now:.2f}] 📋 Factory: 已安排AGV运输任务 - {product.id} 从 {from_station_id} 到 {to_station_id}")
-            
-        except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ Factory: 产品转移任务创建失败: {e}")
-
-    def _handle_product_scrap(self, product, station_id: str, reason: str):
-        """Handle product scrapping notification - update statistics and KPIs"""
-        try:
-            # Update scrap statistics
-            self.scrap_stats["total_scrapped"] += 1
-            
-            if station_id not in self.scrap_stats["scrap_by_station"]:
-                self.scrap_stats["scrap_by_station"][station_id] = 0
-            self.scrap_stats["scrap_by_station"][station_id] += 1
-            
-            if reason not in self.scrap_stats["scrap_reasons"]:
-                self.scrap_stats["scrap_reasons"][reason] = 0
-            self.scrap_stats["scrap_reasons"][reason] += 1
-            
-            # Notify KPI calculator about scrapped product (if method exists)
-            # Note: register_scrapped_product method may not be implemented yet
-            # if hasattr(self.kpi_calculator, 'register_scrapped_product'):
-            #     self.kpi_calculator.register_scrapped_product(product, station_id, reason)
-            
-            # Publish scrap event to MQTT for Unity visualization
-            scrap_event = {
-                "timestamp": self.env.now,
-                "product_id": product.id,
-                "product_type": product.product_type,
-                "station_id": station_id,
-                "reason": reason,
-                "total_scrapped": self.scrap_stats["total_scrapped"]
-            }
-            
-            import json
-            topic = f"factory/events/product_scrapped"
-            self.mqtt_client.publish(topic, json.dumps(scrap_event))
-            
-            print(f"[{self.env.now:.2f}] 📊 Factory: 产品报废统计已更新 - 总计: {self.scrap_stats['total_scrapped']}")
-            
-        except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ Factory: 产品报废处理失败: {e}")
-        
-        # Simulate scrap processing time
-        yield self.env.timeout(1.0)
-
-    def _get_transport_priority(self, product, to_station_id: str) -> int:
-        """Calculate transport priority based on product and destination"""
-        priority = 5  # Default priority
-        
-        # Higher priority for quality check station
-        if to_station_id == "QualityCheck":
-            priority = 3
-        
-        # Higher priority for rework products
-        if product.rework_count > 0:
-            priority = 2
-        
-        # Highest priority for urgent orders (if implemented)
-        # if hasattr(product, 'urgent') and product.urgent:
-        #     priority = 1
-        
-        return priority
-
-
-    def _find_available_agv(self) -> Optional[str]:
-        """Find an available AGV for transport task"""
-        for agv_id, agv in self.agvs.items():
-            # Use payload.items to check if empty (SimPy Store behavior)
-            if agv.status.value == "idle" and len(agv.payload.items) == 0:
-                return agv_id
-        return None
-
-    def _execute_transport_task(self, agv_id: str, task: Dict):
-        """Execute a product transport task with the assigned AGV"""
-        try:
-            agv = self.agvs[agv_id]
-            product = task["product"]
-            from_station_id = task["from_station"]
-            to_station_id = task["to_station"]
-            
-            from_station = self.stations[from_station_id]
-            to_station = self.stations[to_station_id]
-            
-            print(f"[{self.env.now:.2f}] 🚛 {agv_id}: 开始执行运输任务 - {product.id}")
-            
-            # Step 1: Move AGV to pickup station
-            pickup_point = self._get_station_pickup_point(from_station_id)
-            if agv.position != pickup_point:
-                yield self.env.process(self._move_agv_to_position(agv_id, pickup_point))
-            
-            # Step 2: Load product from station
-            agv.load_product(product)
-            product.add_history(self.env.now, f"Loaded onto {agv_id} at {from_station_id}")
-            yield self.env.timeout(3.0)  # Loading time
-            
-            # Step 3: Move AGV to destination station
-            delivery_point = self._get_station_pickup_point(to_station_id)
-            yield self.env.process(self._move_agv_to_position(agv_id, delivery_point))
-            
-            # Step 4: Unload product to destination station
-            unloaded_product = yield agv.unload_product(product.id)
-            if unloaded_product:
-                # add_product_to_buffer is a generator function, need to call it properly
-                yield self.env.process(to_station.add_product_to_buffer(unloaded_product))
-                delivery_success = True  # If no exception, delivery was successful
-                if delivery_success:
-                    product.add_history(self.env.now, f"Delivered to {to_station_id} by {agv_id}")
-                    print(f"[{self.env.now:.2f}] ✅ {agv_id}: 成功运输产品 {product.id} 到 {to_station_id}")
-                else:
-                    print(f"[{self.env.now:.2f}] ❌ {agv_id}: 无法将产品 {product.id} 交付到 {to_station_id}")
-            else:
-                print(f"[{self.env.now:.2f}] ❌ {agv_id}: 无法将产品 {product.id} 交付到 {to_station_id}")
-            
-            yield self.env.timeout(2.0)  # Unloading time
-            
-        except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ {agv_id}: 运输任务执行失败: {e}")
-
-    def _get_station_pickup_point(self, station_id: str) -> Tuple[int, int]:
-        """Get the pickup/delivery point for a station"""
-        # For now, use station position directly
-        # In a more complex system, this would return nearby path points
-        station = self.stations.get(station_id)
-        if station:
-            return station.position
-        return (0, 0)
-
-    def _move_agv_to_position(self, agv_id: str, target_position: Tuple[int, int]):
-        """Move AGV to a specific position using the path system"""
-        agv = self.agvs[agv_id]
-        
-        # For now, move directly to position
-        # In a more complex system, this would use pathfinding
-        yield self.env.process(agv.move_to(target_position, self.path_points))
-
 
     def move_agv(self, agv_id: str, start_point_id: str, end_point_id: str):
         """
@@ -322,8 +188,9 @@ class Factory:
             yield req
             print(f"[{self.env.now:.2f}] {agv_id}: Acquired path {path_key}. Starting move.")
             
-            # Use the AGV's own move_to method to perform the actual movement
-            yield self.env.process(agv.move_to(target_pos, self.path_points))
+            # Use the AGV's own move_to method to perform the actual movement  
+            # Note: move_to now uses AGV's own path_points, not factory's
+            yield self.env.process(agv.move_to(end_point_id))
         
         print(f"[{self.env.now:.2f}] {agv_id}: Released path {path_key}")
 
@@ -410,7 +277,7 @@ class Factory:
                     'position': {'x': agv.position[0], 'y': agv.position[1]},
                     'battery_level': detailed_status.battery_level,
                     'position_accuracy': detailed_status.position_accuracy,
-                    'payload': agv.payload if hasattr(agv, 'payload') else []
+                    'payload': [p.id for p in agv.payload.items] if hasattr(agv, 'payload') else []
                 })
             
             return status_dict
@@ -644,6 +511,9 @@ if __name__ == '__main__':
     print(f"[{factory.env.now:.2f}] 🎉 Factory created successfully!")
     print(f"[{factory.env.now:.2f}] 📊 Stations: {list(factory.stations.keys())}")
     print(f"[{factory.env.now:.2f}] 🚛 AGVs: {list(factory.agvs.keys())}")
+    agv1 = factory.agvs['AGV_1']
+    factory.env.process(agv1.move_to('LP1'))
+
     print(f"[{factory.env.now:.2f}] 🛤️  Conveyors: {list(factory.conveyors.keys())}")
     print(f"[{factory.env.now:.2f}] 🏪 Warehouses: RawMaterial={factory.raw_material.id if factory.raw_material else None}, Warehouse={factory.warehouse.id if factory.warehouse else None}")
     

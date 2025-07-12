@@ -7,26 +7,6 @@ from config.schemas import DeviceStatus
 from src.simulation.entities.base import Device
 from src.simulation.entities.product import Product
 
-"""
-SimPy Store和事件管理说明：
-===================
-
-SimPy的Store对象(包括各种buffer)具有自动容量管理特性：
-1. Store.put(item): 当Store满时会自动阻塞，直到有空间可用
-2. Store.get(): 当Store空时会自动阻塞，直到有元素可取
-3. 类似地，Conveyor.push()等操作也会自动阻塞
-
-因此在代码中：
-❌ 错误做法：手动检查容量 + while循环等待 + yield操作
-✅ 正确做法：直接yield操作，信任SimPy的自动阻塞机制
-
-这样的设计：
-- 简化了代码逻辑
-- 避免了竞态条件
-- 提高了仿真的准确性
-- 遵循了SimPy的设计哲学
-"""
-
 class Station(Device):
     """
     Represents a manufacturing station in the factory.
@@ -58,19 +38,13 @@ class Station(Device):
         position: Tuple[int, int],
         buffer_size: int = 1,  # 默认容量为1
         processing_times: Dict[str, Tuple[int, int]] = {},
-        # product_transfer_callback: Optional[Callable] = None,
-        # product_scrap_callback: Optional[Callable] = None,
         downstream_conveyor=None,
-        fault_system=None
+        mqtt_client=None
     ):
-        super().__init__(env, id, position, device_type="station")
+        super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client)
         self.buffer_size = buffer_size
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.processing_times = processing_times
-        
-        # 产品流转回调函数
-        # self.product_transfer_callback = product_transfer_callback
-        # self.product_scrap_callback = product_scrap_callback
         
         # 工站特定属性初始化
         self._specific_attributes.update({
@@ -88,7 +62,6 @@ class Station(Device):
         }
         
         self.downstream_conveyor = downstream_conveyor
-        self.fault_system = fault_system
         # Start the main operational process for the station
         self.env.process(self.run())
 
@@ -182,9 +155,8 @@ class Station(Device):
         
         print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因{reason}报废")
         
-        # Notify factory about scrapped product (for KPI tracking)
-        if self.product_scrap_callback:
-            yield self.env.process(self.product_scrap_callback(product, self.id, reason))
+        # Report scrapped product through base class
+        self.report_device_error("product_scrap", f"Product {product.id} scrapped due to {reason}")
         
         # Simulate scrap handling time
         yield self.env.timeout(2.0)
@@ -204,8 +176,7 @@ class Station(Device):
                 # 检查哪个buffer比较空，但不需要while循环等待
                 # push()操作会自动阻塞直到有空间
                 if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
-                    if self.fault_system:
-                        self.fault_system.report_buffer_full(self.id, "downstream_conveyor_all_branch_buffer")
+                    self.report_buffer_full("downstream_conveyor_all_branch_buffer")
 
                 if self.downstream_conveyor.is_full("upper"):
                     chosen_buffer = "lower"

@@ -315,6 +315,75 @@ sequenceDiagram
 
 ### 3.2 MQTT 通信层（精确接口定义）
 
+#### 主题架构图
+ 
+```mermaid
+graph TD
+    subgraph TopicHierarchy ["MQTT主题层次结构"]
+        ROOT["factory/"]
+ 
+        subgraph DeviceTopics ["设备状态主题"]
+            DEVICE["device/"]
+            DEV_STATUS["device/{id}/status"]
+            AGV_STATUS["agv/{id}/status"]
+        end
+ 
+        subgraph SystemTopics ["系统事件主题"]
+            ALERTS["alerts/"]
+            FAULT["fault"]
+            BUFFER["buffer"]
+ 
+            ORDERS["orders/"]
+            NEW_ORDER["new"]
+            COMPLETE_ORDER["complete"]
+ 
+            KPI["kpi/"]
+            KPI_UPDATE["update"]
+        end
+ 
+        subgraph AgentTopics ["代理通信主题"]
+            AGENT["agent/{id}/"]
+            COMMAND["command"]
+            RESPONSE["response"]
+        end
+    end
+ 
+    ROOT --> DEVICE
+    ROOT --> ALERTS
+    ROOT --> ORDERS
+    ROOT --> KPI
+    ROOT --> AGENT
+ 
+    DEVICE --> DEV_STATUS
+    DEVICE --> AGV_STATUS
+ 
+    ALERTS --> FAULT
+    ALERTS --> BUFFER
+ 
+    ORDERS --> NEW_ORDER
+    ORDERS --> COMPLETE_ORDER
+ 
+    KPI --> KPI_UPDATE
+ 
+    AGENT --> COMMAND
+    AGENT --> RESPONSE
+ 
+    %% 样式
+    classDef rootClass fill:#ffebee,stroke:#c62828,stroke-width:3px
+    classDef realtimeClass fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    classDef deviceClass fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef systemClass fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef agentClass fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+ 
+    class ROOT rootClass
+    class REALTIME,AGV_POS,DEV_ANIM realtimeClass
+    class DEVICE,DEV_STATUS,AGV_STATUS deviceClass
+    class ALERTS,FAULT,BUFFER,ORDERS,NEW_ORDER,COMPLETE_ORDER,KPI,KPI_UPDATE systemClass
+    class AGENT,COMMAND,RESPONSE agentClass
+```
+ 
+---
+
 #### Topic 架构 (Agent视角)
 
 | Topic | Agent权限 | 描述 | 消息格式 (Payload) |

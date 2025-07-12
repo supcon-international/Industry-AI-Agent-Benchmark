@@ -22,6 +22,7 @@ class RawMaterial(Station):
         id: str = "RawMaterial",
         position: Tuple[int, int] = (5, 20),
         buffer_size: int = 100,  # 大容量buffer
+        mqtt_client=None
     ):
         # dont need processing time for raw material warehouse
         super().__init__(
@@ -30,6 +31,7 @@ class RawMaterial(Station):
             position=position,
             buffer_size=buffer_size,
             processing_times={},  # no processing time
+            mqtt_client=mqtt_client
         )
         
         # override device type
@@ -91,6 +93,7 @@ class Warehouse(Station):
         env: simpy.Environment,
         id: str = "Warehouse",
         position: Tuple[int, int] = (85, 20),
+        mqtt_client=None
     ):
         # finished product warehouse dont need processing time
         super().__init__(
@@ -98,6 +101,7 @@ class Warehouse(Station):
             id=id,
             position=position,
             processing_times={},  # no processing time
+            mqtt_client=mqtt_client
         )
         self.buffer = simpy.Store(env)
         # override device type

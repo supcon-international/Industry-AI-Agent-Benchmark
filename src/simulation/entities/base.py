@@ -30,8 +30,9 @@ class Device:
         id (str): The unique identifier for the device.
         status (DeviceStatus): The current operational status of the device.
         position (Tuple[int, int]): The (x, y) coordinates of the device in the factory layout.
+        mqtt_client: MQTT client for publishing fault events
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic"):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None):
         if not isinstance(env, simpy.Environment):
             raise ValueError("env must be a valid simpy.Environment object.")
         
@@ -40,6 +41,7 @@ class Device:
         self.device_type = device_type
         self.status = DeviceStatus.IDLE
         self.position = position
+        self.mqtt_client = mqtt_client
         
         # 详细状态信息
         self.performance_metrics = DevicePerformanceMetrics()
@@ -181,7 +183,7 @@ class Device:
             print(f"[{self.env.now:.2f}] ❄️  {self.id} 解冻完成")
 
     def can_operate(self) -> bool:
-        """🔥 关键修复：检查设备是否可以操作"""
+        """检查设备是否可以操作"""
         # 检查冻结状态
         if self.is_frozen():
             return False
@@ -191,6 +193,60 @@ class Device:
             return False
             
         return True
+
+    # ========== 故障报告功能 ==========
+    def report_battery_low(self, battery_level: float):
+        """报告电池电量过低"""
+        self._publish_fault_event("battery_low", {
+            "device_id": self.id,
+            "battery_level": battery_level,
+            "timestamp": self.env.now,
+            "severity": "warning"
+        })
+        print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电池电量过低告警 ({battery_level:.1f}%)")
+
+    def report_buffer_full(self, buffer_name: str):
+        """报告缓冲区满"""
+        self._publish_fault_event("buffer_full", {
+            "device_id": self.id,
+            "buffer_name": buffer_name,
+            "timestamp": self.env.now,
+            "severity": "warning"
+        })
+        print(f"[{self.env.now:.2f}] 📦 {self.id}: 缓冲区满告警 ({buffer_name})")
+
+    def report_performance_degradation(self, metric_name: str, current_value: float, threshold: float):
+        """报告性能下降"""
+        self._publish_fault_event("performance_degradation", {
+            "device_id": self.id,
+            "metric_name": metric_name,
+            "current_value": current_value,
+            "threshold": threshold,
+            "timestamp": self.env.now,
+            "severity": "warning"
+        })
+        print(f"[{self.env.now:.2f}] 📉 {self.id}: 性能下降告警 ({metric_name}: {current_value:.1f})")
+
+    def report_device_error(self, error_type: str, description: str):
+        """报告设备错误"""
+        self._publish_fault_event("device_error", {
+            "device_id": self.id,
+            "error_type": error_type,
+            "description": description,
+            "timestamp": self.env.now,
+            "severity": "error"
+        })
+        print(f"[{self.env.now:.2f}] ❌ {self.id}: 设备错误 ({error_type}: {description})")
+
+    def _publish_fault_event(self, event_type: str, event_data: dict):
+        """发布故障事件到MQTT"""
+        if self.mqtt_client:
+            topic = f"factory/faults/{self.id}"
+            message = {
+                "event_type": event_type,
+                "data": event_data
+            }
+            self.mqtt_client.publish(topic, message)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', status='{self.status.value}')"
@@ -210,8 +266,8 @@ class Vehicle(Device):
     Base class for all mobile entities, like AGVs.
     It can be extended with attributes like speed, battery, etc.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], speed_mps: float):
-        super().__init__(env, id, position, device_type="agv")
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], speed_mps: float, mqtt_client=None):
+        super().__init__(env, id, position, device_type="agv", mqtt_client=mqtt_client)
         self.speed_mps = speed_mps # meters per second 
         
         # AGV特定属性
@@ -221,12 +277,14 @@ class Vehicle(Device):
             "load_weight": 0.0
         })
 
-class BaseConveyor(ABC):
+class BaseConveyor(Device, ABC):
     """
     Conveyor的抽象基类，定义所有Conveyor必须实现的接口
     
     所有Conveyor子类都应该实现这些方法，确保一致的接口
     """
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], mqtt_client=None):
+        super().__init__(env, id, position, device_type="conveyor", mqtt_client=mqtt_client)
     
     @abstractmethod
     def push(self, product):

@@ -28,7 +28,6 @@ def test_whole_line_simulation():
     env = simpy.Environment()
     # 创建MQTT客户端（模拟）
     mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT)
-    fault_system = FaultSystem(env, factory_devices={}, mqtt_client=mqtt_client)
     
     # 创建原料仓库和成品仓库
     raw_material = RawMaterial(env, "RAW_001", (5, 20))
@@ -40,8 +39,7 @@ def test_whole_line_simulation():
         id="STATION_A",
         position=(30, 20),
         buffer_size=5,
-        processing_times={"P1": (30, 30), "P2": (40, 40), "P3": (35, 35)},
-        fault_system=fault_system
+        processing_times={"P1": (30, 30), "P2": (40, 40), "P3": (35, 35)}
     )
     
     # 创建AGV
@@ -51,7 +49,12 @@ def test_whole_line_simulation():
         position=(10, 10),
         speed_mps=2.0,
         payload_capacity=1,
-        fault_system=fault_system
+        path_points={
+            "LP0": (5, 20),
+            "LP1": (30, 20),
+            "LP2": (85, 20),
+            "LC1": (10, 10)
+        }
     )
     
     # 创建订单生成器
@@ -79,7 +82,7 @@ def test_whole_line_simulation():
                 print(f"\n[{env.now:.2f}] 🚛 {agv.id}: 开始新的工作流程")
                 
                 # 1. 移动到原料仓库
-                yield env.process(agv.move_to(raw_material.position))
+                yield env.process(agv.move_to("LP0"))
                 
                 # 2. 从原料仓库取货
                 success, feedback, product = yield env.process(agv.load_from(raw_material))
@@ -90,7 +93,7 @@ def test_whole_line_simulation():
                 print(f"[{env.now:.2f}] ✅ {feedback}")
                 
                 # 3. 移动到工站
-                yield env.process(agv.move_to(station_a.position))
+                yield env.process(agv.move_to("LP1"))
                 
                 # 4. 将产品卸载到工站
                 success, feedback, product = yield env.process(agv.unload_to(station_a))
@@ -118,7 +121,7 @@ def test_whole_line_simulation():
                     continue
                 
                 # 7. 移动到成品仓库
-                yield env.process(agv.move_to(warehouse.position))
+                yield env.process(agv.move_to("LP2"))
                 
                 # 8. 将成品卸载到仓库
                 success, feedback, final_product = yield env.process(agv.unload_to(warehouse))
