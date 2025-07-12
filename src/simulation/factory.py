@@ -289,9 +289,7 @@ class Factory:
         for station_id in self.stations:
             self.env.process(self._publish_station_status(station_id))
         
-        # Start AGV status publishing  
-        for agv_id in self.agvs:
-            self.env.process(self._publish_agv_status(agv_id))
+        # AGV status is now event-driven from the AGV class itself.
         
         # Start factory overall status publishing
         self.env.process(self._publish_factory_status())
@@ -327,34 +325,6 @@ class Factory:
             except Exception as e:
                 print(f"[{self.env.now:.2f}] ❌ Failed to publish {station_id} status: {e}")
     
-    def _publish_agv_status(self, agv_id: str):
-        """Publish AGV status every 10 seconds."""
-        while True:
-            yield self.env.timeout(10.0)  # Publish every 10 seconds
-            
-            agv = self.agvs[agv_id]
-            device_status = self.get_device_status(agv_id)
-            
-            # Create status message
-            from config.schemas import AGVStatus
-            from config.topics import get_agv_status_topic
-            
-            status = AGVStatus(
-                timestamp=self.env.now,
-                source_id=agv_id,
-                position=device_status.get('position', {'x': agv.position[0], 'y': agv.position[1]}),
-                battery_level=device_status.get('battery_level', 80.0),
-                payload=device_status.get('payload', []),
-                is_charging=getattr(agv, 'is_charging', False)
-            )
-            
-            topic = get_agv_status_topic(agv_id)
-            try:
-                self.mqtt_client.publish(topic, status)
-                print(f"[{self.env.now:.2f}] 📡 Published {agv_id} status: {agv.status.value}, pos: {agv.position}")
-            except Exception as e:
-                print(f"[{self.env.now:.2f}] ❌ Failed to publish {agv_id} status: {e}")
-
     def _publish_factory_status(self):
         """Publish factory overall status every 30 seconds."""
         while True:

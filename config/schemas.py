@@ -9,6 +9,7 @@ class DeviceStatus(str, Enum):
     IDLE = "idle"
     PROCESSING = "processing"
     MOVING = "moving"  # AGV移动状态
+    INTERACTING = "interacting"  # New status for device-to-device interaction
     CHARGING = "charging"  # AGV充电状态
     ERROR = "error"
     MAINTENANCE = "maintenance"
@@ -102,9 +103,11 @@ class AGVStatus(BaseModel):
     """
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the AGV (e.g., 'AGV_1').")
+    status: DeviceStatus = Field(..., description="Current status of the AGV.")
+    speed_mps: float = Field(..., description="Current speed of the AGV (m/s).")
+    payload: List[str] = Field(..., description="List of product IDs currently being carried.")
     position: Dict[str, float] = Field(..., description="Current coordinates of the AGV, e.g., {'x': 10.0, 'y': 15.0}.")
     battery_level: float = Field(..., ge=0, le=100, description="Current battery level (0-100%).")
-    payload: List[str] = Field(..., description="List of product IDs currently being carried.")
     is_charging: bool = Field(..., description="True if the AGV is currently charging.")
 
 class OrderItem(BaseModel):

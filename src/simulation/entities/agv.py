@@ -8,7 +8,8 @@ from src.simulation.entities.product import Product
 from src.simulation.entities.quality_checker import QualityChecker
 from src.simulation.entities.station import Station
 from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
-from config.schemas import DeviceStatus
+from config.schemas import DeviceStatus, AGVStatus
+from config.topics import get_agv_status_topic
 
 class AGV(Vehicle):
     """
@@ -73,6 +74,9 @@ class AGV(Vehicle):
             "charging_point": self.charging_point,
             "low_battery_threshold": self.low_battery_threshold
         })
+
+        # Publish initial status upon creation
+        self.publish_status()
 
     def consume_battery(self, amount: float, reason: str = "operation"):
         """消耗电量"""
@@ -151,40 +155,6 @@ class AGV(Vehicle):
         
         print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
         self.set_status(DeviceStatus.IDLE)
-
-    def load_product(self, product):
-        """Adds a product to the AGV's payload."""
-        # 检查电量
-        if self.is_battery_low():
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量过低，无法执行装载操作")
-            return False
-            
-        if len(self.payload.items) < self.payload_capacity:
-            yield self.payload.put(product)
-            yield self.env.timeout(1)
-            self.consume_battery(self.battery_consumption_per_action, "装载产品")
-            print(f"[{self.env.now:.2f}] {self.id}: Loaded product {product.id}. 剩余电量: {self.battery_level:.1f}%")
-            return True
-        else:
-            print(f"[{self.env.now:.2f}] {self.id}: Error - Payload capacity reached.")
-            return False
-
-    def unload_product(self, product_id: str):
-        """Removes a product from the AGV's payload."""
-        # 检查电量
-        if self.is_battery_low():
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量过低，无法执行卸载操作")
-            return None
-            
-        if self.payload.items:
-            product_to_remove = yield self.payload.get()
-            yield self.env.timeout(1)
-            self.consume_battery(self.battery_consumption_per_action, "卸载产品")
-            print(f"[{self.env.now:.2f}] {self.id}: Unloaded product {product_to_remove.id}. 剩余电量: {self.battery_level:.1f}%")
-            return product_to_remove
-        else:
-            print(f"[{self.env.now:.2f}] {self.id}: Error - Product {product_id} not in payload.")
-            return None
         
     def load_from(self, device, buffer_type=None, product_id=None, action_time_factor=1):
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
@@ -282,6 +252,7 @@ class AGV(Vehicle):
                 
             # 成功取货后的操作
             if success and product:
+                self.set_status(DeviceStatus.INTERACTING)
                 yield self.env.timeout(time_out)
                 yield self.payload.put(product)
                 self.consume_battery(self.battery_consumption_per_action, "取货操作")
@@ -291,6 +262,9 @@ class AGV(Vehicle):
         except Exception as e:
             feedback = f"取货异常: {str(e)}"
             success = False
+        
+        finally:
+            self.set_status(DeviceStatus.IDLE)
 
         return success, feedback, product
 
@@ -311,7 +285,9 @@ class AGV(Vehicle):
             # Check if AGV has products
             if len(self.payload.items) == 0:
                 return False, "AGV货物为空，无法卸载", None
-                
+            
+            self.set_status(DeviceStatus.INTERACTING)
+            
             # Get product from AGV
             product = yield self.payload.get()
             
@@ -360,6 +336,9 @@ class AGV(Vehicle):
             if product and len(self.payload.items) < self.payload_capacity:
                 yield self.payload.put(product)
             success = False
+            
+        finally:
+            self.set_status(DeviceStatus.IDLE)
             
         return success, feedback, product
 
@@ -490,3 +469,29 @@ class AGV(Vehicle):
 
     def __repr__(self) -> str:
         return f"AGV(id='{self.id}', battery={self.battery_level:.1f}%, payload={len(self.payload.items)}/{self.payload_capacity})"
+
+    def set_status(self, new_status: DeviceStatus):
+        """Overrides the base method to publish status on change."""
+        if self.status == new_status:
+            return  # Avoid redundant publications
+        super().set_status(new_status)
+        self.publish_status()
+
+    def publish_status(self):
+        """Constructs and publishes the current AGV status to MQTT."""
+        if not self.mqtt_client:
+            return
+
+        status_payload = AGVStatus(
+            timestamp=self.env.now,
+            source_id=self.id,
+            status=self.status,
+            speed_mps=self.speed_mps,
+            payload=[p.id for p in self.payload.items],
+            position={'x': self.position[0], 'y': self.position[1]},
+            battery_level=self.battery_level,
+            is_charging=(self.status == DeviceStatus.CHARGING)
+        )
+        
+        topic = get_agv_status_topic(self.id)
+        self.mqtt_client.publish(topic, status_payload, retain=True)
