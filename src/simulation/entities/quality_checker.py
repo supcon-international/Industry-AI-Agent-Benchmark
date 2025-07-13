@@ -46,14 +46,14 @@ class QualityChecker(Station):
                 "P3": (10, 15)
             }
         
-        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client)
-        
+        # Initialize output buffer before calling super().__init__() 
+        # since publish_status() is called in parent's __init__
         self.pass_threshold = pass_threshold
         self.scrap_threshold = scrap_threshold
-        
-        # output buffer for storing passed/finished products, blocked when full
         self.output_buffer_capacity = output_buffer_capacity
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
+        
+        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client)
         
         # 简单统计
         self.stats = {
@@ -70,21 +70,20 @@ class QualityChecker(Station):
         print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{self.pass_threshold}%, scrap≤{self.scrap_threshold}%)")
         # The run process is already started by the parent Station class
         
-    def publish_status(self):
-        """Overrides the base Station's method to include detailed inspection stats."""
-        if not self.mqtt_client:
+    def publish_status(self, **kwargs):
+        if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
-
-        status_payload = StationStatus(
+            
+        status_data = StationStatus(
             timestamp=self.env.now,
             source_id=self.id,
             status=self.status,
-            buffer = self.buffer.items,
-            stats = self.stats,
-            output_buffer = self.output_buffer.items
+            buffer=[p.id for p in self.buffer.items],
+            stats=self.stats,
+            output_buffer=[p.id for p in self.output_buffer.items]
         )
         topic = get_station_status_topic(self.id)
-        self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=True)
+        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=True)
 
     def process_product(self, product: Product):
         """简化的产品检测流程"""

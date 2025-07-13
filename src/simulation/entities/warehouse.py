@@ -44,6 +44,8 @@ class RawMaterial(Station):
         }
         
         print(f"[{self.env.now:.2f}] 🏭 {self.id}: 原料仓库已就绪，缓冲区容量: {buffer_size}")
+        # Ensure status is published after initialization
+        self.publish_status()
 
     def run(self):
         """原料仓库不进行主动处理，只等待AGV取货"""
@@ -117,6 +119,8 @@ class Warehouse(Station):
         }
         
         print(f"[{self.env.now:.2f}] 🏪 {self.id}: 成品仓库已就绪")
+        # Ensure status is published after buffer reassignment
+        self.publish_status()
 
     def run(self):
         """成品仓库不进行主动处理，只接收成品"""

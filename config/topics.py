@@ -30,13 +30,18 @@ ALL_AGV_STATUS = "NLDF/{line}/resource/+/status"
 ALL_FACTORY_TOPICS = "NLDF/{line}/+"
 
 # Legacy topic definitions (keeping for backward compatibility)
-FACTORY_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
+STATION_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
+CONVEYOR_STATUS_TOPIC_PREFIX = "NLDF/line1/conveyor"
 AGV_STATUS_TOPIC_PREFIX = "NLDF/line1/agv"
 # QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "NLDF/line1/quality"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
-    return f"{FACTORY_STATUS_TOPIC_PREFIX}/{station_id}/status"
+    return f"{STATION_STATUS_TOPIC_PREFIX}/{station_id}/status"
+
+def get_conveyor_status_topic(conveyor_id: str) -> str:
+    """Returns the status topic for a specific conveyor."""
+    return f"{CONVEYOR_STATUS_TOPIC_PREFIX}/{conveyor_id}/status"
 
 def get_agv_status_topic(agv_id: str) -> str:
     """Returns the status topic for a specific AGV."""

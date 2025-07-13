@@ -5,8 +5,10 @@ from src.simulation.entities.conveyor import TripleBufferConveyor, Conveyor
 from src.simulation.entities.product import Product
 
 class DummyMqttClient:
-    def publish(self, topic, payload):
+    def publish(self, topic, payload, retain=False):
         print(f"[MQTT] {topic}: {payload}")
+    def is_connected(self):
+        return True
 
 def agv_pickup_q_output(env, qc, interval=15):
     """模拟AGV定时搬运QualityChecker output buffer"""

@@ -284,46 +284,13 @@ class Factory:
         return {}
 
     def _start_status_publishing(self):
-        """Start processes to publish device status to MQTT."""
-        # Start station status publishing
-        for station_id in self.stations:
-            self.env.process(self._publish_station_status(station_id))
-        
-        # AGV status is now event-driven from the AGV class itself.
-        
+        """Start processes to publish device status to MQTT."""        
         # Start factory overall status publishing
         self.env.process(self._publish_factory_status())
         
         # Start enhanced fault events publishing  
         self.env.process(self._publish_fault_events())
     
-    def _publish_station_status(self, station_id: str):
-        """Publish station status every 10 seconds."""
-        while True:
-            yield self.env.timeout(10.0)  # Publish every 10 seconds
-            
-            station = self.stations[station_id]
-            device_status = self.get_device_status(station_id)
-            
-            # Create status message
-            from config.schemas import StationStatus
-            from config.topics import get_station_status_topic
-            
-            status = StationStatus(
-                timestamp=self.env.now,
-                source_id=station_id,
-                status=station.status,
-                utilization=device_status.get('efficiency_rate', 75.0) / 100.0,  # Convert to 0-1 range
-                buffer_level=device_status.get('buffer_level', 0),
-                symptom=device_status.get('symptom')
-            )
-            
-            topic = get_station_status_topic(station_id)
-            try:
-                self.mqtt_client.publish(topic, status)
-                print(f"[{self.env.now:.2f}] 📡 Published {station_id} status: {station.status.value}")
-            except Exception as e:
-                print(f"[{self.env.now:.2f}] ❌ Failed to publish {station_id} status: {e}")
     
     def _publish_factory_status(self):
         """Publish factory overall status every 30 seconds."""
@@ -488,4 +455,4 @@ if __name__ == '__main__':
     print(f"[{factory.env.now:.2f}] 🏪 Warehouses: RawMaterial={factory.raw_material.id if factory.raw_material else None}, Warehouse={factory.warehouse.id if factory.warehouse else None}")
     
     # Test simple simulation for 30 seconds
-    factory.run(until=20) 
+    factory.run(until=20)

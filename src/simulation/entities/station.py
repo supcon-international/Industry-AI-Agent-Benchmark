@@ -77,22 +77,21 @@ class Station(Device):
         super().set_status(new_status)
         self.publish_status()
 
-    def publish_status(self):
-        """Constructs and publishes the current station status to MQTT."""
-        if not self.mqtt_client:
+    def publish_status(self, **kwargs):
+        """Publishes the current status of the station to MQTT."""
+        if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
-
-        status_payload = StationStatus(
+            
+        status_data = StationStatus(
             timestamp=self.env.now,
             source_id=self.id,
             status=self.status,
-            buffer = self.buffer.items,
-            stats = self.stats,
-            output_buffer = []
+            buffer=[p.id for p in self.buffer.items],
+            stats=self.stats,
+            output_buffer=[]  # 普通工站没有 output_buffer
         )
         topic = get_station_status_topic(self.id)
-        # Assuming model_dump_json() is the correct method for pydantic v2
-        self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=True)
+        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=True)
 
     def run(self):
         """The main operational loop for the station."""
@@ -102,24 +101,25 @@ class Station(Device):
                 # 设备无法操作时等待
                 yield self.env.timeout(1)  # 每1秒检查一次
                 continue
-                
-            # The process_product method now handles getting the product from the buffer.
-            yield self.env.process(self.process_product())
+            product = yield self.buffer.get()
+            print(f"[{self.env.now:.2f}] 📦 {self.id}: 从缓冲区获取产品 {product.id}开始自动加工")
 
-    def process_product(self):
+            self.set_status(DeviceStatus.PROCESSING)
+            # The process_product method now handles getting the product from the buffer.
+            yield self.env.process(self.process_product(product))
+
+    def process_product(self, product: Product):
         """
         Simulates the entire lifecycle of processing a single product,
         from waiting for it to processing and transferring it.
         Includes robust error handling for interruptions.
         """
-        product = yield self.buffer.get()
-        print(f"[{self.env.now:.2f}] 📦 {self.id}: 从缓冲区获取产品 {product.id}开始自动加工")
-
         try:
             # Check if the device can operate
             if not self.can_operate():
                 print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
                 yield self.buffer.put(product)
+                self.set_status(DeviceStatus.FAULT)
                 return
 
             self.set_status(DeviceStatus.PROCESSING)

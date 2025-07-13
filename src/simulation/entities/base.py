@@ -275,7 +275,7 @@ class Vehicle(Device):
             "battery_level": random.uniform(80.0, 100.0),
             "position_accuracy": random.uniform(95.0, 100.0),
             "load_weight": 0.0
-        })
+        }) 
 
 class BaseConveyor(Device, ABC):
     """

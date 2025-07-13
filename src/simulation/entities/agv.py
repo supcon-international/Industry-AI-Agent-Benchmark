@@ -478,7 +478,7 @@ class AGV(Vehicle):
         self.publish_status()
 
     def publish_status(self):
-        """Constructs and publishes the current AGV status to MQTT."""
+        """Publishes the current AGV status to the MQTT broker."""
         if not self.mqtt_client:
             return
 
@@ -487,11 +487,10 @@ class AGV(Vehicle):
             source_id=self.id,
             status=self.status,
             speed_mps=self.speed_mps,
-            payload= self.payload.items,
+            payload=[p.id for p in self.payload.items] if self.payload else [],
             position={'x': self.position[0], 'y': self.position[1]},
             battery_level=self.battery_level,
             is_charging=(self.status == DeviceStatus.CHARGING)
         )
-        
-        topic = get_agv_status_topic(self.id)
-        self.mqtt_client.publish(topic, status_payload, retain=True)
+        # Assuming model_dump_json() is the correct method for pydantic v2
+        self.mqtt_client.publish(get_agv_status_topic(self.id), status_payload.model_dump_json(), retain=True)
