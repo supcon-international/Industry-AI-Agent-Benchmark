@@ -2,6 +2,7 @@
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 from enum import Enum
+from src.simulation.entities.product import Product
 
 # --- Enums for Statuses and Priorities ---
 
@@ -86,26 +87,29 @@ class SystemResponse(BaseModel):
 
 class StationStatus(BaseModel):
     """
-    Schema for the status of a manufacturing station.
+    Schema for the status of a production station.
     Published to: factory/station/{id}/status
     """
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
-    source_id: str = Field(..., description="ID of the station (e.g., 'StationA').")
+    source_id: str = Field(..., description="ID of the station (e.g., 'Station_A').")
     status: DeviceStatus = Field(..., description="Current status of the station.")
-    utilization: float = Field(..., ge=0, le=1, description="Device utilization rate (0.0 to 1.0).")
-    buffer_level: int = Field(..., description="Number of products currently in the station's buffer.")
-    symptom: Optional[str] = Field(None, description="The observable symptom if the status is 'error'.")
+    buffer: List[Product] = Field(..., description="List of products in the buffer.")
+    stats: Dict[str, Any] = Field(..., description="Statistics of the station.")
+    # Optional fields, primarily for QualityChecker
+    output_buffer: List[Product] = Field(..., description="List of products in the output buffer.")
+    stats: Dict[str, Any] = Field(..., description="Statistics of the station.")
+
 
 class AGVStatus(BaseModel):
     """
     Schema for the status of an Automated Guided Vehicle (AGV).
-    Published to: factory/resource/{id}/status
+    Published to: factory/agv/{id}/status
     """
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the AGV (e.g., 'AGV_1').")
     status: DeviceStatus = Field(..., description="Current status of the AGV.")
     speed_mps: float = Field(..., description="Current speed of the AGV (m/s).")
-    payload: List[str] = Field(..., description="List of product IDs currently being carried.")
+    payload: List[Product] = Field(..., description="List of product IDs currently being carried.")
     position: Dict[str, float] = Field(..., description="Current coordinates of the AGV, e.g., {'x': 10.0, 'y': 15.0}.")
     battery_level: float = Field(..., ge=0, le=100, description="Current battery level (0-100%).")
     is_charging: bool = Field(..., description="True if the AGV is currently charging.")
@@ -162,7 +166,7 @@ class KPIUpdate(BaseModel):
 
 class FactoryStatus(BaseModel):
     """
-    Schema for factory overall status.
+    Schema for the overall factory status.
     Published to: factory/status
     """
     timestamp: float = Field(..., description="Simulation timestamp.")

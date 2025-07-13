@@ -30,9 +30,9 @@ ALL_AGV_STATUS = "NLDF/{line}/resource/+/status"
 ALL_FACTORY_TOPICS = "NLDF/{line}/+"
 
 # Legacy topic definitions (keeping for backward compatibility)
-FACTORY_STATUS_TOPIC_PREFIX = "NLDF/{line}/station"
-AGV_STATUS_TOPIC_PREFIX = "NLDF/{line}/resource"
-QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "NLDF/{line}/quality"
+FACTORY_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
+AGV_STATUS_TOPIC_PREFIX = "NLDF/line1/agv"
+# QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "NLDF/line1/quality"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
@@ -42,6 +42,6 @@ def get_agv_status_topic(agv_id: str) -> str:
     """Returns the status topic for a specific AGV."""
     return f"{AGV_STATUS_TOPIC_PREFIX}/{agv_id}/status" 
 
-def get_quality_checker_status_topic(quality_checker_id: str) -> str:
-    """Returns the status topic for a specific quality checker."""
-    return f"{QUALITY_CHECKER_STATUS_TOPIC_PREFIX}/{quality_checker_id}/status"
+# def get_quality_checker_status_topic(quality_checker_id: str) -> str:
+#     """Returns the status topic for a specific quality checker."""
+#     return f"{QUALITY_CHECKER_STATUS_TOPIC_PREFIX}/{quality_checker_id}/status"

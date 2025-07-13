@@ -4,9 +4,10 @@ import random
 from typing import Dict, Tuple
 from enum import Enum
 
-from config.schemas import DeviceStatus
+from config.schemas import DeviceStatus, StationStatus
 from src.simulation.entities.station import Station
 from src.simulation.entities.product import Product, QualityStatus
+from config.topics import get_station_status_topic
 
 class SimpleDecision(Enum):
     """简化的质量检测决策"""
@@ -55,14 +56,36 @@ class QualityChecker(Station):
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
         
         # 简单统计
-        self.inspected_count = 0
-        self.passed_count = 0
-        self.scrapped_count = 0
-        self.reworked_count = 0
+        self.stats = {
+            "products_processed": 0,
+            "products_scrapped": 0,
+            "total_processing_time": 0.0,
+            "average_processing_time": 0.0,
+            "inspected_count": 0,
+            "passed_count": 0,
+            "scrapped_count": 0,
+            "reworked_count": 0
+        }
         
-        print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{pass_threshold}%, scrap≤{scrap_threshold}%)")
-        self.env.process(self.run())
+        print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{self.pass_threshold}%, scrap≤{self.scrap_threshold}%)")
+        # The run process is already started by the parent Station class
         
+    def publish_status(self):
+        """Overrides the base Station's method to include detailed inspection stats."""
+        if not self.mqtt_client:
+            return
+
+        status_payload = StationStatus(
+            timestamp=self.env.now,
+            source_id=self.id,
+            status=self.status,
+            buffer = self.buffer.items,
+            stats = self.stats,
+            output_buffer = self.output_buffer.items
+        )
+        topic = get_station_status_topic(self.id)
+        self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=True)
+
     def process_product(self, product: Product):
         """简化的产品检测流程"""
         if not self.can_operate():
@@ -71,7 +94,7 @@ class QualityChecker(Station):
             return
             
         self.set_status(DeviceStatus.PROCESSING)
-        self.inspected_count += 1
+        self.stats["inspected_count"] += 1
         
         # 记录开始检测
         product.process_at_station(self.id, self.env.now)
@@ -84,11 +107,10 @@ class QualityChecker(Station):
         
         # 做出决策
         decision = self._make_simple_decision(product)
+        self.set_status(DeviceStatus.IDLE)
         
-        # 执行决策
         yield self.env.process(self._execute_simple_decision(product, decision))
 
-        self.set_status(DeviceStatus.IDLE)
 
     def _simple_inspection(self, product: Product):
         """简化的检测过程"""
@@ -133,21 +155,26 @@ class QualityChecker(Station):
     def _execute_simple_decision(self, product: Product, decision: SimpleDecision):
         """Execute decision, put passed products into output_buffer"""
         if decision == SimpleDecision.PASS:
-            self.passed_count += 1
+            self.stats["passed_count"] += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
             
             # trigger fault report if output buffer is full
             if len(self.output_buffer.items) >= self.output_buffer_capacity:
                 self.report_buffer_full("output_buffer")
+
+            # Use INTERACTING state for the transfer to output_buffer
+            self.set_status(DeviceStatus.INTERACTING)
             
             yield self.output_buffer.put(product)
             print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
             
+            self.set_status(DeviceStatus.IDLE)
+            
         elif decision == SimpleDecision.SCRAP:
-            self.scrapped_count += 1
+            self.stats["products_scrapped"] += 1
             print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 报废")
         elif decision == SimpleDecision.REWORK:
-            self.reworked_count += 1
+            self.stats["reworked_count"] += 1
             # 简单返工：回到最后一个加工工站
             last_station = self._get_last_processing_station(product)
             if last_station:
@@ -155,8 +182,6 @@ class QualityChecker(Station):
                 print(f"[{self.env.now:.2f}] 🔄 {self.id}: 产品 {product.id} 返工到 {last_station}")
             else:
                 print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法确定返工工站，产品报废")
-        # # 简单的处理延时
-        # yield self.env.timeout(1.0)
 
     def _get_last_processing_station(self, product: Product) -> str:
         """获取产品最后处理的工站 (排除QualityCheck)"""
@@ -165,27 +190,33 @@ class QualityChecker(Station):
 
     def get_simple_stats(self) -> Dict:
         """获取简化的统计信息"""
-        total = self.inspected_count
+        total = self.stats["inspected_count"]
         if total == 0:
             return {"inspected": 0, "pass_rate": 0, "scrap_rate": 0, "rework_rate": 0}
             
         return {
             "inspected": total,
-            "passed": self.passed_count,
-            "scrapped": self.scrapped_count, 
-            "reworked": self.reworked_count,
-            "pass_rate": round(self.passed_count / total * 100, 1),
-            "scrap_rate": round(self.scrapped_count / total * 100, 1),
-            "rework_rate": round(self.reworked_count / total * 100, 1),
+            "passed": self.stats["passed_count"],
+            "scrapped": self.stats["scrapped_count"], 
+            "reworked": self.stats["reworked_count"],
+            "pass_rate": round(self.stats["passed_count"] / total * 100, 1),
+            "scrap_rate": round(self.stats["scrapped_count"] / total * 100, 1),
+            "rework_rate": round(self.stats["reworked_count"] / total * 100, 1),
             "buffer_level": self.get_buffer_level()
         }
 
     def reset_stats(self):
         """重置统计数据"""
-        self.inspected_count = 0
-        self.passed_count = 0
-        self.scrapped_count = 0
-        self.reworked_count = 0 
+        self.stats = {
+            "products_processed": 0,
+            "products_scrapped": 0,
+            "total_processing_time": 0.0,
+            "average_processing_time": 0.0,
+            "inspected_count": 0,
+            "passed_count": 0,
+            "scrapped_count": 0,
+            "reworked_count": 0
+        }
     
     def add_product_to_outputbuffer(self, product: Product):
         """Add a product to its output buffer (used by AGV for delivery)"""
