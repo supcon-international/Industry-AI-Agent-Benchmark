@@ -13,7 +13,7 @@ from config.topics import get_agv_status_topic
 
 class AGV(Vehicle):
     """
-    Represents an Automated Guided Vehicle (AGV).
+    Represents an Automated Guided Vehicle (AGV). Must be initialized with a position in path_points!
 
     AGVs are responsible for transporting products between stations.
     
@@ -43,11 +43,17 @@ class AGV(Vehicle):
         battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
         mqtt_client=None
     ):
+        if position not in path_points.values():
+            raise ValueError(f"AGV position {position} not in path_points {path_points}")
+
         super().__init__(env, id, position, speed_mps, mqtt_client)
         self.battery_level = 100.0
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
+        self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
         self.path_points = path_points
+        self.target_point = None # current target point if moving
+        self.estimated_time = 0.0 # estimated time to complete the task or moving to the target point
         # 充电相关属性
         self.is_charging = False
         self.low_battery_threshold = low_battery_threshold
@@ -127,10 +133,10 @@ class AGV(Vehicle):
             print(f"[{self.env.now:.2f}] ❌ {self.id}: 未知路径点 {target_point}")
             return
             
-        target_position = self.path_points[target_point]
-        
+        self.target_point = target_point
+
         # 检查电量是否足够
-        distance = math.dist(self.position, target_position)
+        distance = math.dist(self.position, self.path_points[target_point])
         if not self.can_complete_task(distance, 1):
             print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量不足，无法移动到 {target_point}")
             self.stats["tasks_interrupted"] += 1
@@ -138,14 +144,15 @@ class AGV(Vehicle):
             return
             
         self.set_status(DeviceStatus.MOVING)
-        print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {target_position}")
+        print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]}")
         
         # 计算移动时间
         travel_time = distance / self.speed_mps
         yield self.env.timeout(travel_time)
         
         # 更新位置和消耗电量
-        self.position = target_position
+        self.position = self.path_points[target_point]
+        self.current_point = target_point
         self.consume_battery(distance * self.battery_consumption_per_meter, f"移动到{target_point}")
         self.consume_battery(self.battery_consumption_per_action, "路径点操作")
         
@@ -487,8 +494,11 @@ class AGV(Vehicle):
             source_id=self.id,
             status=self.status,
             speed_mps=self.speed_mps,
-            payload=[p.id for p in self.payload.items] if self.payload else [],
+            current_point=self.current_point,
+            target_point=self.target_point,
+            estimated_time=self.estimated_time,
             position={'x': self.position[0], 'y': self.position[1]},
+            payload=[p.id for p in self.payload.items] if self.payload else [],
             battery_level=self.battery_level,
             is_charging=(self.status == DeviceStatus.CHARGING)
         )

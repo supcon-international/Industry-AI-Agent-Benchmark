@@ -5,6 +5,8 @@ from typing import Dict, Tuple, Optional
 
 from src.simulation.entities.station import Station
 from src.simulation.entities.product import Product
+from config.schemas import WarehouseStatus
+from config.topics import get_warehouse_status_topic
 
 class RawMaterial(Station):
     """
@@ -21,7 +23,7 @@ class RawMaterial(Station):
         env: simpy.Environment,
         id: str = "RawMaterial",
         position: Tuple[int, int] = (5, 20),
-        buffer_size: int = 100,  # 大容量buffer
+        buffer_size: int = 1000,  # large enough buffer
         mqtt_client=None
     ):
         # dont need processing time for raw material warehouse
@@ -39,46 +41,52 @@ class RawMaterial(Station):
         
         # statistics data
         self.stats = {
-            "materials_supplied": 0,
-            "total_supply_time": 0.0,
+            "total_materials_supplied": 0,
+            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
         }
         
-        print(f"[{self.env.now:.2f}] 🏭 {self.id}: 原料仓库已就绪，缓冲区容量: {buffer_size}")
+        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready, buffer size: {buffer_size}")
         # Ensure status is published after initialization
         self.publish_status()
 
+    def publish_status(self, message: str = "Raw material warehouse is ready"):
+        """Publishes the current status of the raw material warehouse to MQTT."""
+        if not self.mqtt_client or not self.mqtt_client.is_connected():
+            return
+        status_data = WarehouseStatus(
+            timestamp=self.env.now,
+            source_id=self.id,
+            message=message,
+            buffer=[p.id for p in self.buffer.items],
+            stats=self.stats
+        )
+        self.mqtt_client.publish(get_warehouse_status_topic(self.id), status_data.model_dump_json(), retain=True)
+
     def run(self):
-        """原料仓库不进行主动处理，只等待AGV取货"""
-        # 空循环，不自动处理产品，避免继承Station的自动加工行为
+        """raw material warehouse dont process product, only wait for AGV to take product"""
+        # empty loop, dont process product, avoid auto processing behavior from Station
         while True:
-            yield self.env.timeout(60)  # 每分钟检查一次即可
+            yield self.env.timeout(60)  # check every minute
 
     def create_raw_material(self, product_type: str, order_id: str) -> Product:
-        """创建原料产品"""
+        """Create raw material product"""
         product = Product(product_type, order_id)
         
-        # 记录统计
-        self.stats["materials_supplied"] += 1
+        # record statistics
+        self.stats["total_materials_supplied"] += 1
+        self.stats["product_type_summary"][product_type] += 1
         
-        # 记录原料供应历史
+        # record history
         product.add_history(self.env.now, f"Raw material created at {self.id}")
         
-        print(f"[{self.env.now:.2f}] 🔧 {self.id}: 创建原料 {product.id} (类型: {product_type})")
-        # 原料仓库容量大，直接put不会阻塞，保持简单
+        print(f"[{self.env.now:.2f}] 🔧 {self.id}: Create raw material {product.id} (type: {product_type})")
+        # raw material warehouse has large capacity, so put will not block, keep simple
         self.buffer.put(product)
+        self.publish_status(f"Supply raw material {product.id} (type: {product_type}) since order {order_id} is created")
         return product
 
     def is_full(self) -> bool:
         return self.get_buffer_level() >= self.buffer_size
-
-    def get_material_stats(self) -> Dict:
-        """获取原料仓库统计信息"""
-        return {
-            **self.stats,
-            "buffer_level": self.get_buffer_level(),
-            "buffer_utilization": self.get_buffer_level() / self.buffer_size,
-            "can_supply": True  # always can supply
-        }
 
 class Warehouse(Station):
     """
@@ -111,57 +119,44 @@ class Warehouse(Station):
         
         # statistics data
         self.stats = {
-            "products_received": 0,
-            "products_dispatched": 0,
-            "quality_summary": {"P1": 0, "P2": 0, "P3": 0},
-            "storage_duration_total": 0.0,
-            "last_dispatch_time": 0.0
+            "total_products_received": 0,
+            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0},
         }
         
-        print(f"[{self.env.now:.2f}] 🏪 {self.id}: 成品仓库已就绪")
+        print(f"[{self.env.now:.2f}] 🏪 {self.id}: Finished product warehouse is ready")
         # Ensure status is published after buffer reassignment
         self.publish_status()
 
+    def publish_status(self, message: str = "Warehouse is ready"):
+        """Publishes the current status of the warehouse to MQTT."""
+        if not self.mqtt_client or not self.mqtt_client.is_connected():
+            return
+        status_data = WarehouseStatus(
+            timestamp=self.env.now,
+            source_id=self.id,
+            message=message,
+            buffer=[p.id for p in self.buffer.items],
+            stats=self.stats
+        )
+        self.mqtt_client.publish(get_warehouse_status_topic(self.id), status_data.model_dump_json(), retain=True)
+
     def run(self):
-        """成品仓库不进行主动处理，只接收成品"""
+        """warehouse dont process product, only receive product"""
         # empty loop, dont process product, avoid auto processing behavior from Station
         while True:
             yield self.env.timeout(60)  # check every minute
 
     def add_product_to_buffer(self, product: Product):
-        """AGV向成品仓库投放产品"""
-        # SimPy Store自动处理容量，无需手动检查
+        """AGV put product to warehouse"""
+
         yield self.buffer.put(product)
-        
+        self.publish_status(f"Store finished product {product.id} (type: {product.product_type})")
         # record finished product statistics
-        self.stats["products_received"] += 1
-        self.stats["quality_summary"][product.product_type] += 1
+        self.stats["total_products_received"] += 1
+        self.stats["product_type_summary"][product.product_type] += 1
         
         # record product completion history
         product.add_history(self.env.now, f"Stored in warehouse {self.id}")
         print(f"[{self.env.now:.2f}] 📦 {self.id}: Store finished product {product.id} (type: {product.product_type})")
 
         return True
-
-    def get_warehouse_stats(self) -> Dict:
-        """获取成品仓库统计信息"""
-        return {
-            **self.stats,
-            "buffer_level": self.get_buffer_level(),
-        }
-
-    def get_quality_summary(self) -> Dict:
-        """获取成品质量汇总"""
-        total = sum(self.stats["quality_summary"].values())
-        if total == 0:
-            return {"total": 0, "P1_ratio": 0, "P2_ratio": 0, "P3_ratio": 0}
-        
-        return {
-            "total": total,
-            "P1_count": self.stats["quality_summary"]["P1"],
-            "P2_count": self.stats["quality_summary"]["P2"],
-            "P3_count": self.stats["quality_summary"]["P3"],
-            "P1_ratio": round(self.stats["quality_summary"]["P1"] / total * 100, 1),
-            "P2_ratio": round(self.stats["quality_summary"]["P2"] / total * 100, 1),
-            "P3_ratio": round(self.stats["quality_summary"]["P3"] / total * 100, 1)
-        }

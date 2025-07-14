@@ -5,44 +5,6 @@ factory:
   name: "SUPCON AdventureX NLDF"
   description: "自然语言驱动智能制造仿真工厂"
 
-# 路径点定义 (x, y坐标)
-path_points:
-  P0: [5, 20]    # 入口点
-  P1: [12, 20]   # StationA前
-  P2: [18, 20]   # StationA后
-  P3: [32, 20]   # StationB前
-  P4: [38, 20]   # StationB后
-  P5: [58, 20]   # StationC前
-  P6: [72, 20]   # StationC后
-  P7: [78, 20]   # QualityCheck前
-  P8: [85, 20]   # QualityCheck后
-  P9: [10, 10]   # 维护区域
-
-# AGV独立路径点
-lower_path_points:
-  LP0: [5, 15] # raw material warehouse
-  LP1: [15, 15] # StationA
-  LP2: [25, 15] # Conveyor_AB
-  LP3: [35, 15] # StationB
-  LP4: [45, 15] # Conveyor_BC
-  LP5: [55, 15] # StationC 
-  LP6: [65, 15] # Conveyor_CQ
-  LP7: [75, 15] # QualityChecker
-  LP8: [95, 15] # Warehouse
-  LC1: [10, 10] # Charging Area
-
-upper_path_points:
-  UP0: [5, 25]
-  UP1: [15, 25]
-  UP2: [25, 25]
-  UP3: [35, 25]
-  UP4: [45, 25]
-  UP5: [55, 25]
-  UP6: [65, 25]
-  UP7: [75, 25]
-  UP8: [95, 25]
-  UC1: [10, 30]
-
 # 路径段定义 (单向路径)
 path_segments:
   - [P0, P1]  # 主线向前
@@ -61,52 +23,7 @@ path_segments:
   - [P5, P4]
   - [P8, P7]
   - [P7, P6]
-
-agv_paths:
-  AGV_1:
-    zone: "lower"
-    path_points: "lower_path_points"
-    segments:
-      - ["LP0", "LP1"]
-      - ["LP1", "LP2"]
-      - ["LP2", "LP3"]
-      - ["LP3", "LP4"]
-      - ["LP4", "LP5"]
-      - ["LP5", "LP6"]
-      - ["LP6", "LP7"]
-      - ["LP7", "LP8"]
-      - ["LP8", "LP7"]
-      - ["LP7", "LP6"]
-      - ["LP6", "LP5"]
-      - ["LP5", "LP4"]
-      - ["LP4", "LP3"]
-      - ["LP3", "LP2"]
-      - ["LP2", "LP1"]
-      - ["LP1", "LP0"]
-      - ["LP0", "LC1"]
-      - ["LC1", "LP0"]
-  AGV_2:
-    zone: "upper"
-    path_points: "upper_path_points"
-    segments:
-      - ["UP0", "UP1"]
-      - ["UP1", "UP2"]
-      - ["UP2", "UP3"]
-      - ["UP3", "UP4"]
-      - ["UP4", "UP5"]
-      - ["UP5", "UP6"]
-      - ["UP6", "UP7"]
-      - ["UP7", "UP8"]
-      - ["UP8", "UP7"]
-      - ["UP7", "UP6"]
-      - ["UP6", "UP5"]
-      - ["UP5", "UP4"]
-      - ["UP4", "UP3"]
-      - ["UP3", "UP2"]
-      - ["UP2", "UP1"]
-      - ["UP1", "UP0"]
-      - ["UP0", "UC1"]
-      - ["UC1", "UP0"]
+  
 
 # 工站配置
 stations:
@@ -158,18 +75,19 @@ stations:
 # AGV配置
 agvs:
   - id: "AGV_1"
-    position: [10, 15] # initial position
+    position: [10, 10] # initial position
     path_points:
-      LP0: [5, 15] # raw material warehouse
-      LP1: [15, 15] # StationA
-      LP2: [25, 15] # Conveyor_AB
-      LP3: [35, 15] # StationB
-      LP4: [45, 15] # Conveyor_BC
-      LP5: [55, 15] # StationC 
-      LP6: [65, 15] # Conveyor_CQ
-      LP7: [75, 15] # QualityChecker
-      LP8: [95, 15] # Warehouse
-      LC1: [10, 10] # Charging Area
+      P0: [5, 15] # raw material warehouse
+      P1: [12, 15] # StationA
+      P2: [25, 15] # Conveyor_AB
+      P3: [32, 15] # StationB
+      P4: [45, 15] # Conveyor_BC
+      P5: [52, 15] # StationC 
+      P6: [65, 15] # Conveyor_CQ
+      P7: [72, 15] # QualityChecker
+      P8: [80, 15] # QualityChecker_output
+      P9: [95, 15] # Warehouse
+      P10: [10, 10] # Charging Area
     speed_mps: 2.0  # 移动速度 (米/秒)
     payload_capacity: 2  # 最大载货数量
     low_battery_threshold: 5.0  # 低电量阈值
@@ -179,18 +97,19 @@ agvs:
     battery_consumption_per_action: 0.5  # 每次操作消耗0.5%电量
     
   - id: "AGV_2"
-    position: [10, 25]
+    position: [10, 30]
     path_points:
-        UP0: [5, 25]
-        UP1: [15, 25]
-        UP2: [25, 25]
-        UP3: [35, 25]
-        UP4: [45, 25]
-        UP5: [55, 25]
-        UP6: [65, 25]
-        UP7: [75, 25]
-        UP8: [95, 25]
-        UC1: [10, 30]
+      P0: [5, 25]
+      P1: [12, 25]
+      P2: [25, 25]
+      P3: [32, 25]
+      P4: [45, 25]
+      P5: [52, 25]
+      P6: [65, 25]
+      P7: [72, 25]
+      P8: [80, 25]
+      P9: [95, 25]
+      P10: [10, 30]
     speed_mps: 2.0
     payload_capacity: 2
     low_battery_threshold: 5.0

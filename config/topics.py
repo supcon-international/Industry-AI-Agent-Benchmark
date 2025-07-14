@@ -13,7 +13,7 @@ BUFFER_FULL_ALERT_TOPIC = "NLDF/{line}/alerts/buffer_full"
 AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF/{line}/alerts/agv_battery_low"
 
 # Order and KPI topics
-NEW_ORDER_TOPIC = "NLDF/{line}/orders/new"
+NEW_ORDER_TOPIC = "NLDF/line1/orders/new"
 KPI_UPDATE_TOPIC = "NLDF/{line}/kpi/update"
 
 # Agent command topics (published by AI agents)
@@ -33,7 +33,7 @@ ALL_FACTORY_TOPICS = "NLDF/{line}/+"
 STATION_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
 CONVEYOR_STATUS_TOPIC_PREFIX = "NLDF/line1/conveyor"
 AGV_STATUS_TOPIC_PREFIX = "NLDF/line1/agv"
-# QUALITY_CHECKER_STATUS_TOPIC_PREFIX = "NLDF/line1/quality"
+WAREHOUSE_STATUS_TOPIC_PREFIX = "NLDF/line1/warehouse"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
@@ -47,6 +47,6 @@ def get_agv_status_topic(agv_id: str) -> str:
     """Returns the status topic for a specific AGV."""
     return f"{AGV_STATUS_TOPIC_PREFIX}/{agv_id}/status" 
 
-# def get_quality_checker_status_topic(quality_checker_id: str) -> str:
-#     """Returns the status topic for a specific quality checker."""
-#     return f"{QUALITY_CHECKER_STATUS_TOPIC_PREFIX}/{quality_checker_id}/status"
+def get_warehouse_status_topic(warehouse_id: str) -> str:
+    """Returns the status topic for a specific warehouse."""
+    return f"{WAREHOUSE_STATUS_TOPIC_PREFIX}/{warehouse_id}/status"

@@ -9,9 +9,9 @@ from src.simulation.entities.product import Product
 class DeviceStatus(str, Enum):
     IDLE = "idle"
     PROCESSING = "processing"
-    MOVING = "moving"  # AGV移动状态
+    MOVING = "moving"
     INTERACTING = "interacting"  # New status for device-to-device interaction
-    CHARGING = "charging"  # AGV充电状态
+    CHARGING = "charging"
     ERROR = "error"
     MAINTENANCE = "maintenance"
     FROZEN = "frozen"  # 新增：因诊断错误而冻结的状态
@@ -92,7 +92,7 @@ class SystemResponse(BaseModel):
 class StationStatus(BaseModel):
     """
     Schema for the status of a production station.
-    Published to: factory/station/{id}/status
+    Published to: NLDF/line1/station/{id}/status
     """
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the station (e.g., 'Station_A').")
@@ -105,14 +105,17 @@ class StationStatus(BaseModel):
 class AGVStatus(BaseModel):
     """
     Schema for the status of an Automated Guided Vehicle (AGV).
-    Published to: factory/agv/{id}/status
+    Published to: NLDF/line1/agv/{id}/status
     """
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the AGV (e.g., 'AGV_1').")
     status: DeviceStatus = Field(..., description="Current status of the AGV.")
     speed_mps: float = Field(..., description="Current speed of the AGV (m/s).")
-    payload: List[str] = Field(..., description="List of product IDs currently being carried.")
+    current_point: str = Field(..., description="Current point of the AGV, e.g., 'P1'.")
     position: Dict[str, float] = Field(..., description="Current coordinates of the AGV, e.g., {'x': 10.0, 'y': 15.0}.")
+    target_point: Optional[str] = Field(None, description="Target point of the AGV if moving. eg. 'P1'")
+    estimated_time: float = Field(..., description="Estimated time to complete the task or moving to the target point.")
+    payload: List[str] = Field(..., description="List of product IDs currently being carried.")
     battery_level: float = Field(..., ge=0, le=100, description="Current battery level (0-100%).")
     is_charging: bool = Field(..., description="True if the AGV is currently charging.")
 
@@ -128,6 +131,16 @@ class ConveyorStatus(BaseModel):
     upper_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the upper buffer.")
     lower_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the lower buffer.")
 
+class WarehouseStatus(BaseModel):
+    """
+    Schema for the status of a warehouse.
+    Published to: NLDF/line1/warehouse/{id}/status
+    """
+    timestamp: float = Field(..., description="Simulation timestamp of the status update.")
+    source_id: str = Field(..., description="ID of the warehouse (e.g., 'Warehouse_1').")
+    message: str = Field(..., description="Message of the warehouse.")
+    buffer: List[str] = Field(..., description="List of product IDs in the buffer.")
+    stats: Dict[str, Any] = Field(..., description="Statistics of the warehouse.")
 
 class OrderItem(BaseModel):
     """A single item within a new order."""

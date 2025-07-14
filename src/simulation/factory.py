@@ -35,10 +35,6 @@ class Factory:
         self.warehouse: Optional[Warehouse] = None
         self.raw_material: Optional[RawMaterial] = None
         
-        # Resources for AGV path collision avoidance
-        self.path_points = self.layout['path_points']
-        self.path_resources: Dict[str, simpy.Resource] = {}
-        
         # AGV task queue for product transportation
         self.agv_task_queue = simpy.Store(self.env)
         
@@ -163,31 +159,6 @@ class Factory:
                 raise ValueError(f"Unknown warehouse type: {warehouse_cfg['id']}")
             
             print(f"[{self.env.now:.2f}] 🏪 Created Warehouse: {warehouse_cfg['id']}")
-
-    def move_agv(self, agv_id: str, start_point_id: str, end_point_id: str):
-        """
-        Manages the movement of an AGV along a single path segment,
-        ensuring no collisions by using path resources.
-        """
-        agv = self.agvs[agv_id]
-        path_key = f"{start_point_id}_{end_point_id}"
-        
-        if path_key not in self.path_resources:
-            raise ValueError(f"Path segment {path_key} does not exist.")
-            
-        path_resource = self.path_resources[path_key]
-        target_pos = self.path_points[end_point_id]
-
-        print(f"[{self.env.now:.2f}] {agv_id}: Requesting path {path_key}")
-        with path_resource.request() as req:
-            yield req
-            print(f"[{self.env.now:.2f}] {agv_id}: Acquired path {path_key}. Starting move.")
-            
-            # Use the AGV's own move_to method to perform the actual movement  
-            # Note: move_to now uses AGV's own path_points, not factory's
-            yield self.env.process(agv.move_to(end_point_id))
-        
-        print(f"[{self.env.now:.2f}] {agv_id}: Released path {path_key}")
 
     def _setup_event_handlers(self):
         """Setup event handlers for order processing and fault handling."""

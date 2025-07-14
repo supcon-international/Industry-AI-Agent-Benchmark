@@ -24,7 +24,7 @@ class OrderGenerator:
         self.mqtt_client = mqtt_client
         self.raw = raw_material
         # Order generation parameters from PRD
-        self.generation_interval_range = (30, 60)  # seconds
+        self.generation_interval_range = (1, 2)  # seconds
         self.quantity_weights = {1: 40, 2: 30, 3: 20, 4: 7, 5: 3}
         self.product_distribution = {'P1': 60, 'P2': 30, 'P3': 10}
         self.priority_distribution = {
@@ -137,7 +137,7 @@ class OrderGenerator:
     def _publish_order(self, order: NewOrder):
         """Publish the order to MQTT."""
         try:
-            self.mqtt_client.publish(NEW_ORDER_TOPIC, order)
+            self.mqtt_client.publish(NEW_ORDER_TOPIC, order.model_dump_json())
             print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
             print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
             print(f"   - Priority: {order.priority.value}")
