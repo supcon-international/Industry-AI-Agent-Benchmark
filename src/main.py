@@ -79,67 +79,10 @@ class FactorySimulation:
         
         return min(1.0, station.total_processing_time / total_time)
 
-    def start_status_publishing(self):
-        """Start a process to periodically publish factory status to MQTT."""
-        if not self.factory or not self.mqtt_client:
-            logger.error("Factory or MQTT client not initialized")
-            return
-            
-        factory = self.factory  # Local reference for type checking
-        mqtt_client = self.mqtt_client  # Local reference for type checking
-            
-        def status_publisher():
-            """A SimPy process that publishes status updates."""
-            while self.running and factory and mqtt_client:
-                # Publish station statuses
-                for station_id, station in factory.stations.items():
-                    status_data = {
-                        "timestamp": factory.env.now,
-                        "source_id": station_id,
-                        "status": station.status.value,
-                        "utilization": self._calculate_station_utilization(station),
-                        "buffer_level": len(station.buffer.items)
-                    }
-                    
-                    from config.topics import get_station_status_topic
-                    from config.schemas import StationStatus
-                    
-                    topic = get_station_status_topic(station_id)
-                    status_msg = StationStatus.model_validate(status_data)
-                    mqtt_client.publish(topic, status_msg)
-                
-                # Publish AGV statuses
-                for agv_id, agv in factory.agvs.items():
-                    status_data = {
-                        "timestamp": factory.env.now,
-                        "source_id": agv_id,
-                        "position": {"x": float(agv.position[0]), "y": float(agv.position[1])},
-                        "battery_level": agv.battery_level,
-                        "payload": [p.id for p in agv.payload],
-                        "is_charging": agv.is_charging
-                    }
-                    
-                    from config.topics import get_agv_status_topic
-                    from config.schemas import AGVStatus
-                    
-                    topic = get_agv_status_topic(agv_id)
-                    status_msg = AGVStatus.model_validate(status_data)
-                    mqtt_client.publish(topic, status_msg)
-                
-                # Wait 10 seconds before next status update
-                yield factory.env.timeout(10.0)
-        
-        # Start the status publishing process
-        factory.env.process(status_publisher())
-        logger.info("📊 Status publishing started (every 10 seconds)")
-
-    def run(self, duration: int = None):
+    def run(self, duration: Optional[int] = None):
         """Run the simulation."""
         logger.info("🚀 Starting Factory Simulation...")
         self.running = True
-        
-        # Start status publishing
-        self.start_status_publishing()
         
         try:
             if duration:
@@ -147,11 +90,10 @@ class FactorySimulation:
                 self.factory.run(until=duration)
             else:
                 logger.info("🔄 Running simulation indefinitely (Ctrl+C to stop)")
-                # Run simulation in real-time
                 while self.running:
                     # Run simulation for 1 second at a time
-                    self.factory.run(until=self.factory.env.now + 1.0)
-                    time.sleep(2)  # Small delay to prevent busy waiting
+                    self.factory.run(until=int(self.factory.env.now) + 1)
+                    time.sleep(1)  # Small delay to prevent busy waiting
                     
         except KeyboardInterrupt:
             logger.info("🛑 Simulation interrupted by user")

@@ -14,7 +14,6 @@ from src.game_logic.fault_system import FaultSystem
 from src.game_logic.kpi_calculator import KPICalculator
 from src.game_logic.state_space_manager import ComplexStateSpaceManager
 from src.utils.mqtt_client import MQTTClient
-from src.unity_interface.real_time_publisher import RealTimePublisher
 
 # Import configuration loader
 from src.utils.config_loader import load_factory_config
@@ -81,11 +80,7 @@ class Factory:
         
         # Start device status publishing
         self._start_status_publishing()
-        
-        # Start Unity real-time publishing (high frequency updates)
-        self.unity_publisher = RealTimePublisher(self.env, self.mqtt_client, self)
-        print(f"[{self.env.now:.2f}] 🎮 Unity real-time publisher initialized (100ms AGV updates)")
-        
+           
         self._bind_conveyors_to_stations()
         self._setup_conveyor_downstreams()
 
