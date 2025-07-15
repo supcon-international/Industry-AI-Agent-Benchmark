@@ -70,6 +70,8 @@ class CommandHandler:
                 self._handle_load_agv(target, params)
             elif action == "unload_agv":
                 self._handle_unload_agv(target, params)
+            elif action == "charge_agv":
+                self._handle_charge_agv(target, params)
             elif action == "agv_action_sequence":
                 self._handle_agv_action_sequence(target, params)
             elif action == "request_maintenance":
@@ -153,6 +155,22 @@ class CommandHandler:
         agv = self.factory.agvs[agv_id]
         device = self.factory.stations[device_id]
         self.factory.env.process(agv.unload_to(device, buffer_type))
+
+    def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any]):
+        """Handle AGV charge commands.
+        params: {target_level: float, action_time_factor: float}
+        """
+        target_level = params.get("target_level")
+        if not target_level:
+            logger.error("charge_agv command missing 'target_level' parameter")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="charge_agv command missing 'target_level' parameter").model_dump_json())
+            return
+        if agv_id not in self.factory.agvs:
+            logger.error(f"AGV {agv_id} not found in factory")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
+            return
+        agv = self.factory.agvs[agv_id]
+        self.factory.env.process(agv.voluntary_charge(target_level))
 
     def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any]):
         """支持agent一次下发一串AGV动作，仿真端按序执行并反馈。params: {actions: [{type, args}]}

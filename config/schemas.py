@@ -117,7 +117,7 @@ class AGVStatus(BaseModel):
     estimated_time: float = Field(..., description="Estimated time to complete the task or moving to the target point.")
     payload: List[str] = Field(..., description="List of product IDs currently being carried.")
     battery_level: float = Field(..., ge=0, le=100, description="Current battery level (0-100%).")
-    is_charging: bool = Field(..., description="True if the AGV is currently charging.")
+    message: Optional[str] = Field(None, description="Current action message, e.g., 'emergency charging', 'voluntary charging', 'moving to P1'.")
 
 class ConveyorStatus(BaseModel):
     """传送带状态的数据模型"""
@@ -126,7 +126,7 @@ class ConveyorStatus(BaseModel):
     status: DeviceStatus = Field(..., description="Current status of the conveyor.")
     is_full: bool = Field(..., description="Whether the conveyor buffer is full.")
     # For TripleBufferConveyor, buffer is the main buffer
-    buffer: List[str] = Field(..., description="List of product IDs in the main buffer.")
+    buffer: List[str] = Field(..., description="List of product IDs in the buffer.")
     # Only for TripleBufferConveyor
     upper_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the upper buffer.")
     lower_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the lower buffer.")

@@ -24,7 +24,7 @@ class OrderGenerator:
         self.mqtt_client = mqtt_client
         self.raw = raw_material
         # Order generation parameters from PRD
-        self.generation_interval_range = (1, 2)  # seconds
+        self.generation_interval_range = (10, 50)  # seconds
         self.quantity_weights = {1: 40, 2: 30, 3: 20, 4: 7, 5: 3}
         self.product_distribution = {'P1': 60, 'P2': 30, 'P3': 10}
         self.priority_distribution = {

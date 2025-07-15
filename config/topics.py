@@ -17,9 +17,9 @@ NEW_ORDER_TOPIC = "NLDF/line1/orders/new"
 KPI_UPDATE_TOPIC = "NLDF/{line}/kpi/update"
 
 # Agent command topics (published by AI agents)
-AGENT_COMMANDS_TOPIC = "NLDF/{line}/agent/commands"
+AGENT_COMMANDS_TOPIC = "NLDF/line1/agent/commands"
 # Agent response topics (subscribed by AI agents)
-AGENT_RESPONSES_TOPIC = "NLDF/{line}/agent/responses"
+AGENT_RESPONSES_TOPIC = "NLDF/line1/agent/responses"
 
 # Natural language logs for visualization
 NL_LOGS_TOPIC = "NLDF/{line}/agent/nl_logs"

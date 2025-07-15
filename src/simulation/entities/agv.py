@@ -1,15 +1,15 @@
 # simulation/entities/agv.py
 import simpy
 import math
-import random
 from typing import Tuple, Dict, Optional, List
-from src.simulation.entities.base import Vehicle
+from src.simulation.entities.base import Vehicle, Device
 from src.simulation.entities.product import Product
 from src.simulation.entities.quality_checker import QualityChecker
 from src.simulation.entities.station import Station
 from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
 from config.schemas import DeviceStatus, AGVStatus
 from config.topics import get_agv_status_topic
+from config.path_timing import get_travel_time, is_path_available
 
 class AGV(Vehicle):
     """
@@ -20,12 +20,11 @@ class AGV(Vehicle):
     Attributes:
         battery_level (float): The current battery percentage (0-100).
         payload (List[any]): The list of products currently being carried.
-        is_charging (bool): Flag indicating if the AGV is charging.
-        low_battery_threshold (float): 电量低于此值时自动返航充电
-        charging_point (Tuple[int, int]): 充电点坐标
-        charging_speed (float): 充电速度 (%/秒)
-        battery_consumption_per_meter (float): 每米移动消耗的电量
-        battery_consumption_per_action (float): 每次装卸操作消耗的电量
+        low_battery_threshold (float): when battery level is below this value, AGV will return to charging point automatically
+        charging_point (str): Charging point name, must be in path_points
+        charging_speed (float): charging speed (%/second)
+        battery_consumption_per_meter (float): every meter move consumes this much battery
+        battery_consumption_per_action (float): every action consumes this much battery
     """
     
     def __init__(
@@ -37,7 +36,7 @@ class AGV(Vehicle):
         speed_mps: float,
         payload_capacity: int = 1,
         low_battery_threshold: float = 5.0,  # 低电量阈值
-        charging_point: Tuple[int, int] = (10, 10),  # 充电点坐标
+        charging_point: str = "P10",  # 充电点坐标(可为路径点名或坐标)
         charging_speed: float = 3.33,  # 充电速度(30秒充满)
         battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
         battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
@@ -47,7 +46,7 @@ class AGV(Vehicle):
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
 
         super().__init__(env, id, position, speed_mps, mqtt_client)
-        self.battery_level = 100.0
+        self.battery_level = 40.0
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
         self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
@@ -55,7 +54,6 @@ class AGV(Vehicle):
         self.target_point = None # current target point if moving
         self.estimated_time = 0.0 # estimated time to complete the task or moving to the target point
         # 充电相关属性
-        self.is_charging = False
         self.low_battery_threshold = low_battery_threshold
         self.charging_point = charging_point
         self.charging_speed = charging_speed
@@ -76,13 +74,12 @@ class AGV(Vehicle):
         # 更新设备特定属性
         self._specific_attributes.update({
             "battery_level": self.battery_level,
-            "is_charging": self.is_charging,
             "charging_point": self.charging_point,
             "low_battery_threshold": self.low_battery_threshold
         })
 
         # Publish initial status upon creation
-        self.publish_status()
+        self.publish_status("initialized")
 
     def consume_battery(self, amount: float, reason: str = "operation"):
         """消耗电量"""
@@ -104,16 +101,24 @@ class AGV(Vehicle):
         """检查电量是否过低"""
         return self.battery_level <= self.low_battery_threshold
 
-    def can_complete_task(self, estimated_distance: float = 0.0, estimated_actions: int = 0) -> bool:
+    def can_complete_task(self, estimated_travel_time: float = 0.0, estimated_actions: int = 0) -> bool:
         """预估是否有足够电量完成任务"""
+        # Convert travel time to estimated distance for battery calculation
+        estimated_distance = estimated_travel_time * self.speed_mps
         estimated_consumption = (
             estimated_distance * self.battery_consumption_per_meter +
             estimated_actions * self.battery_consumption_per_action
         )
         
-        # 预留回到充电点的电量
-        return_distance = math.dist(self.position, self.charging_point)
-        return_consumption = return_distance * self.battery_consumption_per_meter
+        # 预留回到充电点的电量 (使用路径时间表)
+        return_time = get_travel_time(self.current_point, self.charging_point)
+        if return_time < 0:
+            # If no direct path to charging point, use fallback calculation
+            return_distance = math.dist(self.position, self.path_points[self.charging_point])
+            return_consumption = return_distance * self.battery_consumption_per_meter
+        else:
+            return_distance = return_time * self.speed_mps
+            return_consumption = return_distance * self.battery_consumption_per_meter
         
         total_needed = estimated_consumption + return_consumption + 2.0  # 2%安全余量
         return self.battery_level >= total_needed
@@ -135,38 +140,48 @@ class AGV(Vehicle):
             
         self.target_point = target_point
 
-        # 检查电量是否足够
-        distance = math.dist(self.position, self.path_points[target_point])
-        if not self.can_complete_task(distance, 1):
+        # use path timing to get travel time
+        travel_time = get_travel_time(self.current_point, target_point)
+        if travel_time < 0:
+            print(f"[{self.env.now:.2f}] ❌ {self.id}: 无法找到从 {self.current_point} 到 {target_point} 的路径")
+            return
+            
+        # check if battery is enough
+        if not self.can_complete_task(travel_time, 1):
             print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量不足，无法移动到 {target_point}")
             self.stats["tasks_interrupted"] += 1
             yield self.env.process(self.emergency_charge())
             return
             
-        self.set_status(DeviceStatus.MOVING)
-        print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]}")
+        self.set_status(DeviceStatus.MOVING, f"moving to {target_point} from {self.current_point}, estimated time: {travel_time:.1f}s")
+        print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]} (预计时间: {travel_time:.1f}s)")
         
-        # 计算移动时间
-        travel_time = distance / self.speed_mps
+        # wait for move to complete
+        self.estimated_time = travel_time
         yield self.env.timeout(travel_time)
         
-        # 更新位置和消耗电量
+        # update position and consume battery
         self.position = self.path_points[target_point]
         self.current_point = target_point
+        self.target_point = None
+        self.estimated_time = 0.0
+        
+        # calculate battery consumption based on travel time
+        distance = travel_time * self.speed_mps
         self.consume_battery(distance * self.battery_consumption_per_meter, f"移动到{target_point}")
         self.consume_battery(self.battery_consumption_per_action, "路径点操作")
         
-        # 更新统计
+        # update statistics
         self.stats["total_distance"] += distance
         self.stats["tasks_completed"] += 1
         
         print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
-        self.set_status(DeviceStatus.IDLE)
+        self.set_status(DeviceStatus.IDLE, f"arrived at {target_point}")
         
-    def load_from(self, device, buffer_type=None, product_id=None, action_time_factor=1):
+    def load_from(self, device:Device, buffer_type=None, product_id=None, action_time_factor=1):
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         """
-        # 检查电量
+        # check battery level
         if self.is_battery_low():
             return False, f"{self.id}电量过低({self.battery_level:.1f}%)，无法执行取货操作", None
             
@@ -174,7 +189,7 @@ class AGV(Vehicle):
         feedback = ""
         success = False
         
-        # 计算超时时间
+        # calculate timeout time
         time_out = getattr(device, 'processing_time', 10) / 5 * action_time_factor
         
         try:
@@ -259,11 +274,11 @@ class AGV(Vehicle):
                 
             # 成功取货后的操作
             if success and product:
-                self.set_status(DeviceStatus.INTERACTING)
+                buffer_desc = f" {buffer_type}" if buffer_type else ""
+                self.set_status(DeviceStatus.INTERACTING, f"loading from {device.id}{buffer_desc}")
                 yield self.env.timeout(time_out)
                 yield self.payload.put(product)
                 self.consume_battery(self.battery_consumption_per_action, "取货操作")
-                buffer_desc = f" {buffer_type}" if buffer_type else ""
                 feedback = f"已从{device.id}{buffer_desc}取出产品{product.id}并装载到AGV，剩余电量: {self.battery_level:.1f}%"
                 
         except Exception as e:
@@ -293,7 +308,7 @@ class AGV(Vehicle):
             if len(self.payload.items) == 0:
                 return False, "AGV货物为空，无法卸载", None
             
-            self.set_status(DeviceStatus.INTERACTING)
+            self.set_status(DeviceStatus.INTERACTING, f"unloading to {device.id}")
             
             # Get product from AGV
             product = yield self.payload.get()
@@ -349,81 +364,73 @@ class AGV(Vehicle):
             
         return success, feedback, product
 
-    def charge_battery(self, target_level: float = 100.0):
+    def charge_battery(self, target_level: float = 100.0, message: Optional[str] = None):
         """Charge battery to target level."""
-        if self.is_charging:
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 已在充电中")
+        if self.status == DeviceStatus.CHARGING:
+            print(f"[{self.env.now:.2f}] 🔋 {self.id}: already charging")
             return
             
         if self.battery_level >= target_level:
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量已足够 ({self.battery_level:.1f}%)")
+            print(f"[{self.env.now:.2f}] 🔋 {self.id}: battery level is enough ({self.battery_level:.1f}%)")
             return
             
-        # 移动到充电点
-        if self.position != self.charging_point:
-            distance = math.dist(self.position, self.charging_point)
-            travel_time = distance / self.speed_mps
-            print(f"[{self.env.now:.2f}] 🚛 {self.id}: 前往充电点 {self.charging_point}")
-            yield self.env.timeout(travel_time)
-            self.position = self.charging_point
-            self.consume_battery(distance * self.battery_consumption_per_meter, "前往充电点")
+        # move to charging point
+        if self.current_point != self.charging_point:
+            yield self.env.process(self.move_to(self.charging_point))
             
-        # 开始充电
-        self.is_charging = True
-        self.set_status(DeviceStatus.CHARGING)
-        self._specific_attributes["is_charging"] = True
+        # start charging
+        self.set_status(DeviceStatus.CHARGING, message)
         
         charge_needed = target_level - self.battery_level
         charge_time = charge_needed / self.charging_speed
         
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: 开始充电 ({self.battery_level:.1f}% → {target_level:.1f}%, 预计 {charge_time:.1f}s)")
+        print(f"[{self.env.now:.2f}] 🔋 {self.id}: start charging ({self.battery_level:.1f}% → {target_level:.1f}%, estimated {charge_time:.1f}s)")
         
         yield self.env.timeout(charge_time)
         
-        # 充电完成
+        # charging completed
         self.battery_level = target_level
-        self.is_charging = False
         self._specific_attributes["battery_level"] = self.battery_level
-        self._specific_attributes["is_charging"] = False
         
-        # 更新统计
+        # update statistics
         self.stats["total_charge_time"] += charge_time
         
         print(f"[{self.env.now:.2f}] ✅ {self.id}: 充电完成，当前电量: {self.battery_level:.1f}%")
-        self.set_status(DeviceStatus.IDLE)
+        self.set_status(DeviceStatus.IDLE, f"charged to {target_level:.1f}%")
 
     def emergency_charge(self):
         """Emergency charging when battery is critically low."""
-        print(f"[{self.env.now:.2f}] 🚨 {self.id}: 应急充电启动")
+        print(f"[{self.env.now:.2f}] 🚨 {self.id}: emergency charging started")
         self.stats["forced_charge_count"] += 1
         self.stats["low_battery_interruptions"] += 1
         
-        # 充电到安全水平
-        yield self.env.process(self.charge_battery(50.0))
+        # charge to safe level
+        yield self.env.process(self.charge_battery(50.0, "emergency charging to 50%"))
 
     def voluntary_charge(self, target_level: float = 80.0):
         """Voluntary charging to maintain good battery level."""
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: 主动充电")
+        target_level = float(target_level)
+        print(f"[{self.env.now:.2f}] 🔋 {self.id}: voluntary charging")
         self.stats["voluntary_charge_count"] += 1
         
-        yield self.env.process(self.charge_battery(target_level))
+        yield self.env.process(self.charge_battery(target_level, f"voluntary charging to {target_level:.1f}%"))
 
     def auto_charge_if_needed(self):
-        """自动检查并在需要时充电（后台进程）"""
+        """auto check and charge if needed (background process)"""
         while True:
-            # 每5秒检查一次电量
+            # check every 5 seconds
             yield self.env.timeout(5.0)
             
-            # 如果电量过低且未在充电，则自动充电
-            if self.is_battery_low() and not self.is_charging:
-                print(f"[{self.env.now:.2f}] 🔋 {self.id}: 自动检测到电量过低，启动应急充电")
+            # if battery is low and not charging, start emergency charging
+            if self.is_battery_low() and self.status != DeviceStatus.CHARGING:
+                print(f"[{self.env.now:.2f}] 🔋 {self.id}: battery is low, start emergency charging")
                 yield self.env.process(self.emergency_charge())
 
     def get_battery_status(self) -> dict:
         """获取电池状态信息"""
         return {
             "battery_level": self.battery_level,
-            "is_charging": self.is_charging,
+            "is_charging": self.status == DeviceStatus.CHARGING,
             "is_low_battery": self.is_battery_low(),
             "charging_point": self.charging_point,
             "can_operate": not self.is_battery_low(),
@@ -465,26 +472,27 @@ class AGV(Vehicle):
         """获取路径点的坐标"""
         return self.path_points.get(point_name)
 
-    def estimate_travel_time(self, target_point: str) -> float:
-        """估算到目标路径点的移动时间"""
-        if target_point not in self.path_points:
-            return float('inf')
-            
-        target_position = self.path_points[target_point]
-        distance = math.dist(self.position, target_position)
-        return distance / self.speed_mps
-
     def __repr__(self) -> str:
         return f"AGV(id='{self.id}', battery={self.battery_level:.1f}%, payload={len(self.payload.items)}/{self.payload_capacity})"
 
-    def set_status(self, new_status: DeviceStatus):
+    def set_status(self, new_status: DeviceStatus, message: Optional[str] = None):
         """Overrides the base method to publish status on change."""
         if self.status == new_status:
             return  # Avoid redundant publications
         super().set_status(new_status)
-        self.publish_status()
+        self.publish_status(message)
 
-    def publish_status(self):
+    def report_battery_low(self, battery_level: float):
+        """report battery low"""
+        self._publish_fault_event("battery_low", {
+            "device_id": self.id,
+            "battery_level": battery_level,
+            "timestamp": self.env.now,
+            "severity": "warning"
+        })
+        print(f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low warning ({battery_level:.1f}%)")
+
+    def publish_status(self, message: Optional[str] = None):
         """Publishes the current AGV status to the MQTT broker."""
         if not self.mqtt_client:
             return
@@ -500,7 +508,7 @@ class AGV(Vehicle):
             position={'x': self.position[0], 'y': self.position[1]},
             payload=[p.id for p in self.payload.items] if self.payload else [],
             battery_level=self.battery_level,
-            is_charging=(self.status == DeviceStatus.CHARGING)
+            message=message
         )
         # Assuming model_dump_json() is the correct method for pydantic v2
         self.mqtt_client.publish(get_agv_status_topic(self.id), status_payload.model_dump_json(), retain=True)

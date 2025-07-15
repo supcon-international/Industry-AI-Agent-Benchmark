@@ -83,7 +83,7 @@ agvs:
       P3: [32, 15] # StationB
       P4: [45, 15] # Conveyor_BC
       P5: [52, 15] # StationC 
-      P6: [65, 15] # Conveyor_CQ
+      P6: [65, 10] # Conveyor_CQ_lower
       P7: [72, 15] # QualityChecker
       P8: [80, 15] # QualityChecker_output
       P9: [95, 15] # Warehouse
@@ -91,7 +91,7 @@ agvs:
     speed_mps: 2.0  # 移动速度 (米/秒)
     payload_capacity: 2  # 最大载货数量
     low_battery_threshold: 5.0  # 低电量阈值
-    charging_point: [10, 10]  # 充电点坐标
+    charging_point: P10  # 充电点坐标
     charging_speed: 3.33  # 充电速度(30秒充满)
     battery_consumption_per_meter: 0.1  # 每米消耗0.1%电量
     battery_consumption_per_action: 0.5  # 每次操作消耗0.5%电量
@@ -113,7 +113,7 @@ agvs:
     speed_mps: 2.0
     payload_capacity: 2
     low_battery_threshold: 5.0
-    charging_point: [10, 10]
+    charging_point: P10
     charging_speed: 3.33
     battery_consumption_per_meter: 0.1
     battery_consumption_per_action: 0.5

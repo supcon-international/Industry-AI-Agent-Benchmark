@@ -194,17 +194,7 @@ class Device:
             
         return True
 
-    # ========== 故障报告功能 ==========
-    def report_battery_low(self, battery_level: float):
-        """报告电池电量过低"""
-        self._publish_fault_event("battery_low", {
-            "device_id": self.id,
-            "battery_level": battery_level,
-            "timestamp": self.env.now,
-            "severity": "warning"
-        })
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电池电量过低告警 ({battery_level:.1f}%)")
-
+    # ========== fault reporting ==========
     def report_buffer_full(self, buffer_name: str):
         """报告缓冲区满"""
         self._publish_fault_event("buffer_full", {
