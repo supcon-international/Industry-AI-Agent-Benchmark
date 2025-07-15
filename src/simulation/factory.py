@@ -182,48 +182,6 @@ class Factory:
             callback(order)
         return wrapped_publisher
 
-    def handle_maintenance_request(self, device_id: str, maintenance_type: str, agent_id: str = "unknown"):
-        """Handle maintenance requests from agents using new diagnosis system."""
-        if self.fault_system is None:
-            # Handle case where fault system is disabled
-            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot handle maintenance request for {device_id}.")
-            # Return a default/empty diagnosis result or raise an error
-            # Assuming DiagnosisResult has a default constructor or can be mocked
-            from src.game_logic.fault_system import DiagnosisResult
-            return DiagnosisResult(is_correct=False, repair_time=0.0, affected_devices=[], device_id=device_id, diagnosis_command=maintenance_type, penalty_applied=False, can_skip=False)
-
-        # Use the enhanced fault system's maintenance handling
-        diagnosis_result = self.fault_system.handle_maintenance_request(device_id, maintenance_type, agent_id)
-        
-        # Update KPI tracking with the new result structure
-        self.kpi_calculator.add_maintenance_cost(device_id, maintenance_type, diagnosis_result.is_correct)
-        self.kpi_calculator.add_fault_recovery_time(diagnosis_result.repair_time)
-        
-        # Track diagnosis accuracy for KPI (could be extended later)
-        # TODO: Add diagnosis result tracking to KPI calculator if needed
-        
-        return diagnosis_result
-
-    def inspect_device(self, device_id: str):
-        """
-        Inspect a device to get detailed status information.
-        This delegates to the fault system and returns current device state.
-        """
-        if self.fault_system is None:
-            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot inspect device {device_id}.")
-            return None
-        return self.fault_system.inspect_device(device_id)
-
-    def skip_repair_time(self, device_id: str) -> bool:
-        """
-        Skip the repair/penalty time for a device.
-        This allows players to continue operating other devices.
-        """
-        if self.fault_system is None:
-            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot skip repair time for {device_id}.")
-            return False
-        return self.fault_system.skip_repair_time(device_id)
-
     def get_available_devices(self) -> List[str]:
         """
         Get list of devices that can currently be operated (not frozen).

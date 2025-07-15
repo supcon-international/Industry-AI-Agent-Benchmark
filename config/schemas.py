@@ -12,7 +12,6 @@ class DeviceStatus(str, Enum):
     MOVING = "moving"
     INTERACTING = "interacting"  # New status for device-to-device interaction
     CHARGING = "charging"
-    ERROR = "error"
     MAINTENANCE = "maintenance"
     FROZEN = "frozen"  # 新增：因诊断错误而冻结的状态
 
@@ -77,6 +76,7 @@ class AgentCommand(BaseModel):
     Schema for commands sent by the agent to the factory.
     Published to: factory/agent/commands
     """
+    command_id: str = Field(..., description="The ID of the command.")
     action: str = Field(..., description="The action to be performed, e.g., 'move_agv'.")
     target: str = Field(..., description="The ID of the device or entity to act upon.")
     params: Dict[str, Any] = Field({}, description="A dictionary of parameters for the action.")
@@ -87,6 +87,7 @@ class SystemResponse(BaseModel):
     Published to: factory/agent/responses
     """
     timestamp: float = Field(..., description="Simulation timestamp of the response.")
+    command_id: str = Field(..., description="The ID of the command.")
     response: str = Field(..., description="The response to the command.")
 
 class StationStatus(BaseModel):
@@ -157,6 +158,19 @@ class NewOrder(BaseModel):
     items: List[OrderItem] = Field(..., description="List of products and quantities in the order.")
     priority: OrderPriority = Field(..., description="Priority level of the order.")
     deadline: float = Field(..., description="Simulation timestamp by which the order should be completed.")
+
+class FaultAlert(BaseModel):
+    """
+    Schema for fault alerts.
+    Published to: NLDF/line1/alerts/{device_id}
+    """
+    timestamp: float = Field(..., description="Simulation timestamp of the alert.")
+    device_id: str = Field(..., description="ID of the device that triggered the alert.")
+    alert_type: str = Field(..., description="Type of the alert.")
+    symptom: str = Field(..., description="Symptom of the alert.")
+    fault_type: str = Field(..., description="Type of the fault.")
+    estimated_duration: float = Field(..., description="Estimated duration of the fault (seconds).")
+    message: str = Field(..., description="Message of the alert.")
 
 class KPIUpdate(BaseModel):
     """
