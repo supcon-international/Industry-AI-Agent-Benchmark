@@ -14,6 +14,7 @@ import logging
 import signal
 import sys
 import time
+import argparse
 from typing import Optional
 
 from src.simulation.factory import Factory
@@ -40,7 +41,7 @@ class FactorySimulation:
         self.command_handler: Optional[CommandHandler] = None
         self.running = False
 
-    def initialize(self):
+    def initialize(self, no_faults: bool = False):
         """Initialize all simulation components."""
         logger.info("🏭 Initializing Factory Simulation...")
         
@@ -49,10 +50,23 @@ class FactorySimulation:
         
         # Connect to MQTT
         self.mqtt_client.connect()
-        logger.info(f"📡 Connected to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
-        
+        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
+
+        # Wait for MQTT client to be fully connected
+        max_retries = 20
+        retry_interval = 0.5
+        for i in range(max_retries):
+            if self.mqtt_client.is_connected():
+                logger.info("✅ MQTT client is fully connected.")
+                break
+            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+            time.sleep(retry_interval)
+        else:
+            logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
+            raise ConnectionError("MQTT connection failed.")
+
         # Create the factory with MQTT client
-        self.factory = Factory(load_factory_config(), self.mqtt_client)
+        self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
         logger.info(f"✅ Factory created with {len(self.factory.stations)} stations and {len(self.factory.agvs)} AGVs")
         logger.info("📋 Order generation, fault system, and KPI calculation initialized")
         
@@ -81,6 +95,10 @@ class FactorySimulation:
 
     def run(self, duration: Optional[int] = None):
         """Run the simulation."""
+        if self.factory is None:
+            logger.error("❌ Factory is not initialized. Call initialize() first.")
+            return
+
         logger.info("🚀 Starting Factory Simulation...")
         self.running = True
         
@@ -117,8 +135,82 @@ def signal_handler(signum, frame):
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     sys.exit(0)
 
-def main():
+def menu_input_thread(mqtt_client):
+    import json
+    from config.topics import AGENT_COMMANDS_TOPIC
+    while True:
+        print("\n请选择操作类型：")
+        print("1. 移动AGV")
+        print("2. 装载")
+        print("3. 卸载")
+        print("4. 充电")
+        print("5. 退出")
+        op = input("> ").strip()
+        if op == "1":
+            agv_id = input("请输入AGV编号: ").strip()
+            target_point = input("请输入目标点: ").strip()
+            agv_id = "AGV_" + agv_id
+            target_point = "P" + target_point
+            cmd = {
+                "action": "move_agv",
+                "target": agv_id,
+                "params": {"target_point": target_point}
+            }
+        elif op == "2":
+            agv_id = input("请输入AGV编号: ").strip()
+            device_id = input("请输入装载设备编号: ").strip()
+            agv_id = "AGV_" + agv_id
+            buffer_type = input("请输入buffer类型: ").strip()
+            cmd = {
+                "action": "load_agv",
+                "target": agv_id,
+                "params": {"device_id": device_id, "buffer_type": buffer_type}
+            }
+        elif op == "3":
+            agv_id = input("请输入AGV编号: ").strip()
+            agv_id = "AGV_" + agv_id
+            device_id = input("请输入卸载设备编号: ").strip()
+            buffer_type = input("请输入buffer类型: ").strip()
+            cmd = {
+                "action": "unload_agv",
+                "target": agv_id,
+                "params": {"device_id": device_id, "buffer_type": buffer_type}
+            }
+        elif op == "4":
+            agv_id = input("请输入AGV编号: ").strip()
+            agv_id = "AGV_" + agv_id
+            target_level = input("请输入目标电量(如80): ").strip()
+            try:
+                target_level = float(target_level)
+            except Exception:
+                print("目标电量需为数字！")
+                continue
+            cmd = {
+                "action": "charge_agv",
+                "target": agv_id,
+                "params": {"target_level": target_level}
+            }
+        elif op == "5":
+            print("退出菜单输入线程。")
+            break
+        else:
+            print("无效选择，请重试。")
+            continue
+        # Publish command to MQTT
+        mqtt_client.publish(AGENT_COMMANDS_TOPIC, json.dumps(cmd))
+        print(f"已发送命令: {cmd}")
+
+def main(argv=None):
     """Main function."""
+    # Add argparse to handle command-line arguments
+    parser = argparse.ArgumentParser(description="SUPCON Factory Simulation Launcher")
+    parser.add_argument(
+        "--no-faults",
+        action="store_true", # This makes it a boolean flag
+        help="Run the simulation without the fault system enabled."
+    )
+    args = parser.parse_args(argv)
+
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -127,7 +219,10 @@ def main():
     simulation = FactorySimulation()
     
     try:
-        simulation.initialize()
+        simulation.initialize(no_faults=args.no_faults) # Pass the argument to initialize
+        # Start menu input thread after MQTT client is ready
+        import threading
+        threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client,), daemon=True).start()
         simulation.run()  # Run indefinitely
     except Exception as e:
         logger.error(f"❌ Failed to start simulation: {e}")

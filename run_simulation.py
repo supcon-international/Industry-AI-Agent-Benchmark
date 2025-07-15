@@ -14,4 +14,5 @@ sys.path.insert(0, project_root)
 # Now we can import and run the main simulation
 if __name__ == "__main__":
     from src.main import main
-    sys.exit(main()) 
+    # Pass all command-line arguments to the main function
+    sys.exit(main(sys.argv[1:])) 

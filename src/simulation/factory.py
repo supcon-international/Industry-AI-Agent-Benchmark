@@ -12,7 +12,6 @@ from src.simulation.entities.quality_checker import QualityChecker
 from src.game_logic.order_generator import OrderGenerator
 from src.game_logic.fault_system import FaultSystem
 from src.game_logic.kpi_calculator import KPICalculator
-from src.game_logic.state_space_manager import ComplexStateSpaceManager
 from src.utils.mqtt_client import MQTTClient
 
 # Import configuration loader
@@ -22,10 +21,11 @@ class Factory:
     """
     The main class that orchestrates the entire factory simulation.
     """
-    def __init__(self, layout_config: Dict, mqtt_client: MQTTClient):
+    def __init__(self, layout_config: Dict, mqtt_client: MQTTClient, no_faults: bool = False):
         self.env = simpy.Environment()
         self.layout = layout_config
         self.mqtt_client = mqtt_client
+        self.no_faults_mode = no_faults # Store the flag
         
         self.stations: Dict[str, Station] = {}
         self.agvs: Dict[str, AGV] = {}
@@ -66,10 +66,15 @@ class Factory:
             raise ValueError("RawMaterial device not found in configuration")
 
         # Game logic components (fault system needs device references)
-        self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)
+        # Conditionally initialize FaultSystem
+        if not self.no_faults_mode:
+            self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)
+            print("🔧 Fault System Initialized.")
+        else:
+            self.fault_system = None # Explicitly set to None if not enabled
+            print("🚫 Fault System Disabled (no-faults mode).")
         
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
-        self.state_space_manager = ComplexStateSpaceManager(self.env, self, self.fault_system)
         
         # Setup event handlers
         self._setup_event_handlers()
@@ -179,6 +184,14 @@ class Factory:
 
     def handle_maintenance_request(self, device_id: str, maintenance_type: str, agent_id: str = "unknown"):
         """Handle maintenance requests from agents using new diagnosis system."""
+        if self.fault_system is None:
+            # Handle case where fault system is disabled
+            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot handle maintenance request for {device_id}.")
+            # Return a default/empty diagnosis result or raise an error
+            # Assuming DiagnosisResult has a default constructor or can be mocked
+            from src.game_logic.fault_system import DiagnosisResult
+            return DiagnosisResult(is_correct=False, repair_time=0.0, affected_devices=[], device_id=device_id, diagnosis_command=maintenance_type, penalty_applied=False, can_skip=False)
+
         # Use the enhanced fault system's maintenance handling
         diagnosis_result = self.fault_system.handle_maintenance_request(device_id, maintenance_type, agent_id)
         
@@ -196,6 +209,9 @@ class Factory:
         Inspect a device to get detailed status information.
         This delegates to the fault system and returns current device state.
         """
+        if self.fault_system is None:
+            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot inspect device {device_id}.")
+            return None
         return self.fault_system.inspect_device(device_id)
 
     def skip_repair_time(self, device_id: str) -> bool:
@@ -203,12 +219,18 @@ class Factory:
         Skip the repair/penalty time for a device.
         This allows players to continue operating other devices.
         """
+        if self.fault_system is None:
+            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. Cannot skip repair time for {device_id}.")
+            return False
         return self.fault_system.skip_repair_time(device_id)
 
     def get_available_devices(self) -> List[str]:
         """
         Get list of devices that can currently be operated (not frozen).
         """
+        if self.fault_system is None:
+            print(f"[{self.env.now:.2f}] 🚫 Fault System is disabled. No available devices from fault system.")
+            return []
         return self.fault_system.get_available_devices()
 
     def get_device_status(self, device_id: str) -> Dict:
@@ -274,8 +296,7 @@ class Factory:
                 active_orders=len(self.kpi_calculator.active_orders),
                 total_orders=self.kpi_calculator.stats.total_orders,
                 completed_orders=self.kpi_calculator.stats.completed_orders,
-                active_faults=len(self.fault_system.active_faults),
-                unique_states_observed=self.state_space_manager.get_state_space_statistics()['unique_states_observed'],
+                active_faults=len(self.fault_system.active_faults) if self.fault_system else 0,
                 simulation_time=self.env.now
             )
             
@@ -291,35 +312,29 @@ class Factory:
             yield self.env.timeout(1.0)  # Check for faults every 1 seconds
             
             # If there are active faults, publish them more frequently
-            for device_id, fault in self.fault_system.active_faults.items():
-                # Create a detailed fault alert message
-                device_status = self.get_device_status(device_id)
-                
-                fault_alert = {
-                    "device_id": device_id,
-                    "fault_type": fault.fault_type.value,
-                    "symptom": fault.symptom,
-                    "duration_seconds": self.env.now - fault.start_time,
-                    "device_status": device_status.get('status'),
-                    "can_operate": device_status.get('can_operate', False),
-                    "frozen_until": device_status.get('frozen_until'),
-                    "timestamp": self.env.now
-                }
-                
-                try:
-                    import json
-                    self.mqtt_client.publish(f"factory/alerts/{device_id}", json.dumps(fault_alert))
-                    print(f"[{self.env.now:.2f}] 🚨 Enhanced fault alert published for {device_id}: {fault.symptom}")
-                except Exception as e:
-                    print(f"[{self.env.now:.2f}] ❌ Failed to publish fault alert: {e}")
+            if self.fault_system and self.fault_system.active_faults:
+                for device_id, fault in self.fault_system.active_faults.items():
+                    # Create a detailed fault alert message
+                    device_status = self.get_device_status(device_id)
+                    
+                    fault_alert = {
+                        "device_id": device_id,
+                        "fault_type": fault.fault_type.value,
+                        "symptom": fault.symptom,
+                        "duration_seconds": self.env.now - fault.start_time,
+                        "device_status": device_status.get('status'),
+                        "can_operate": device_status.get('can_operate', False),
+                        "frozen_until": device_status.get('frozen_until'),
+                        "timestamp": self.env.now
+                    }
+                    
+                    try:
+                        import json
+                        self.mqtt_client.publish(f"factory/alerts/{device_id}", json.dumps(fault_alert))
+                        print(f"[{self.env.now:.2f}] 🚨 Enhanced fault alert published for {device_id}: {fault.symptom}")
+                    except Exception as e:
+                        print(f"[{self.env.now:.2f}] ❌ Failed to publish fault alert: {e}")
 
-    def get_state_space_statistics(self) -> Dict:
-        """Get comprehensive state space statistics."""
-        return self.state_space_manager.get_state_space_statistics()
-
-    def get_current_state_vector(self):
-        """Get the current state vector for analysis."""
-        return self.state_space_manager.get_state_vector()
 
     def run(self, until: int):
         """Runs the simulation for a given duration."""
@@ -332,7 +347,6 @@ class Factory:
         # - Fault injection: self.fault_system.run_fault_injection() (auto-started) 
         # - KPI updates: self.kpi_calculator.run_kpi_updates() (auto-started)
         # - MQTT publishing: self._start_status_publishing() (started in __init__)
-        # - State evolution: self.state_space_manager._evolve_states() (auto-started)
         """
         # print(f"--- Active processes: Order Gen, Fault Injection, KPI Updates, MQTT Publishing ---")
         self.env.run(until=until)

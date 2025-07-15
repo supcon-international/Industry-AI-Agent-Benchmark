@@ -26,7 +26,12 @@ class RawMaterial(Station):
         buffer_size: int = 1000,  # large enough buffer
         mqtt_client=None
     ):
-        # dont need processing time for raw material warehouse
+        # statistics data
+        self.stats = {
+            "total_materials_supplied": 0,
+            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
+        }
+
         super().__init__(
             env=env,
             id=id,
@@ -39,15 +44,8 @@ class RawMaterial(Station):
         # override device type
         self.device_type = "raw_material"
         
-        # statistics data
-        self.stats = {
-            "total_materials_supplied": 0,
-            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
-        }
-        
         print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready, buffer size: {buffer_size}")
-        # Ensure status is published after initialization
-        self.publish_status()
+        # Ensure status is published after initialization (Removed as super().__init__ now handles it)
 
     def publish_status(self, message: str = "Raw material warehouse is ready"):
         """Publishes the current status of the raw material warehouse to MQTT."""
@@ -106,6 +104,11 @@ class Warehouse(Station):
         mqtt_client=None
     ):
         # finished product warehouse dont need processing time
+        # statistics data
+        self.stats = {
+            "total_products_received": 0,
+            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0},
+        }
         super().__init__(
             env=env,
             id=id,
@@ -117,15 +120,8 @@ class Warehouse(Station):
         # override device type
         self.device_type = "warehouse"
         
-        # statistics data
-        self.stats = {
-            "total_products_received": 0,
-            "product_type_summary": {"P1": 0, "P2": 0, "P3": 0},
-        }
-        
         print(f"[{self.env.now:.2f}] 🏪 {self.id}: Finished product warehouse is ready")
-        # Ensure status is published after buffer reassignment
-        self.publish_status()
+        # Ensure status is published after buffer reassignment (Removed as super().__init__ now handles it)
 
     def publish_status(self, message: str = "Warehouse is ready"):
         """Publishes the current status of the warehouse to MQTT."""

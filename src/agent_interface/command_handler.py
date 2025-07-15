@@ -50,8 +50,8 @@ class CommandHandler:
         except Exception as e:
             msg = f"Failed to process command: {e}"
             logger.error(msg)
-            payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, payload)
+            response_payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, response_payload)
 
     def _execute_command(self, command: AgentCommand):
         """
@@ -132,12 +132,18 @@ class CommandHandler:
         buffer_type = params.get("buffer_type")
         if not device_id:
             logger.error("load_agv command missing 'device_id' parameter")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="load_agv command missing 'device_id' parameter").model_dump_json())
             return
         if agv_id not in self.factory.agvs:
             logger.error(f"AGV {agv_id} not found in factory")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
-        device = self.factory.stations[device_id]
+        device = self.factory.all_devices.get(device_id)
+        if not device:
+            logger.error(f"Device {device_id} not found in factory")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"Device {device_id} not found in factory").model_dump_json())
+            return
         self.factory.env.process(agv.load_from(device, buffer_type))
 
     def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any]):
@@ -148,12 +154,18 @@ class CommandHandler:
         buffer_type = params.get("buffer_type")
         if not device_id:
             logger.error("unload_agv command missing 'device_id' parameter")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="unload_agv command missing 'device_id' parameter").model_dump_json())
             return
         if agv_id not in self.factory.agvs:
             logger.error(f"AGV {agv_id} not found in factory")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
-        device = self.factory.stations[device_id]
+        device = self.factory.all_devices.get(device_id)
+        if not device:
+            logger.error(f"Device {device_id} not found in factory")
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"Device {device_id} not found in factory").model_dump_json())
+            return
         self.factory.env.process(agv.unload_to(device, buffer_type))
 
     def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any]):

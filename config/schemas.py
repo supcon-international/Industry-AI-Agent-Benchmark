@@ -204,5 +204,4 @@ class FactoryStatus(BaseModel):
     total_orders: int = Field(..., description="Total number of orders received.")
     completed_orders: int = Field(..., description="Number of completed orders.")
     active_faults: int = Field(..., description="Number of currently active faults.")
-    unique_states_observed: int = Field(..., description="Number of unique states observed.")
     simulation_time: float = Field(..., description="Current simulation time.") 
