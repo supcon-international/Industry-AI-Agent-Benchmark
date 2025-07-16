@@ -133,8 +133,12 @@ class FaultSystem:
         
         device = self.factory_devices[device_id]
         
-        # Interrupt any ongoing action before setting status, but not self-interrupt
-        if hasattr(device, 'action') and device.action and device.action.is_alive and device.action != self.env.active_process:
+        # Special handling for conveyors - interrupt processing instead of main action
+        if hasattr(device, 'interrupt_all_processing'):
+            interrupted_count = device.interrupt_all_processing()
+            print(f"[{self.env.now:.2f}] 🚫 {device_id}: Interrupted {interrupted_count} processing operations")
+        # For other devices, interrupt the main action
+        elif hasattr(device, 'action') and device.action and device.action.is_alive and device.action != self.env.active_process:
             device.action.interrupt("Fault injected")
         
         device.set_status(DeviceStatus.FAULT)

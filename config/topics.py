@@ -9,8 +9,8 @@ NEW_FACTORY_STATUS_TOPIC = "NLDF/{line}/{device_type}/{device_id}/status"
 FACTORY_STATUS_TOPIC = "NLDF/{line}/status"
 
 # Buffer full alert topics (published by fault system)
-BUFFER_FULL_ALERT_TOPIC = "NLDF/{line}/alerts/buffer_full"
-AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF/{line}/alerts/agv_battery_low"
+BUFFER_FULL_ALERT_TOPIC = "NLDF/line1/alerts/buffer_full"
+AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF/line1/alerts/agv_battery_low"
 
 # Order and KPI topics
 NEW_ORDER_TOPIC = "NLDF/line1/orders/new"

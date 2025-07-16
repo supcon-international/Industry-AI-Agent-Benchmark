@@ -99,7 +99,8 @@ class MQTTClient:
         elif isinstance(payload, str):
             message = payload
         else:
-            raise TypeError("Payload must be a string or a Pydantic BaseModel")
+            message = str(payload)
+            # raise TypeError("Payload must be a string or a Pydantic BaseModel")
 
         logger.debug(f"Publishing to topic '{topic}': {message}")
         result = self._client.publish(topic, message, qos, retain)

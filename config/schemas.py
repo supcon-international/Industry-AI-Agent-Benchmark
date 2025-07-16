@@ -124,7 +124,6 @@ class ConveyorStatus(BaseModel):
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the conveyor (e.g., 'Conveyor_1').")
     status: DeviceStatus = Field(..., description="Current status of the conveyor.")
-    is_full: bool = Field(..., description="Whether the conveyor buffer is full.")
     # For TripleBufferConveyor, buffer is the main buffer
     buffer: List[str] = Field(..., description="List of product IDs in the buffer.")
     # Only for TripleBufferConveyor

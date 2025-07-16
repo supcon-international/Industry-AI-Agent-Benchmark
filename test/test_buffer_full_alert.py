@@ -96,11 +96,11 @@ def test_buffer_full_alert():
     # 产品流转流程
     def product_flow(env):
         for i in range(6):
-            p = Product("P3", f"order_{i}")
+            p = Product("P1", f"order_{i}")
             print(f"[{env.now:.2f}] 订单生成: {p.id}")
             # 放入StationC
             yield station_a.buffer.put(p)
-            yield env.timeout(1)
+            yield env.timeout(3)
 
     # # 启动AGV搬运进程
     # env.process(agv_pickup_q_output(env, qc, interval=10))
@@ -108,7 +108,9 @@ def test_buffer_full_alert():
     env.process(product_flow(env))
 
     # 运行仿真
-    env.run(until=100)
+    for i in range(1000):
+        env.run(until=env.now + 1.0)
+        time.sleep(0)
 
 if __name__ == '__main__':
     test_buffer_full_alert()

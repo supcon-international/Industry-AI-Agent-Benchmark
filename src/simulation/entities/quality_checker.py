@@ -86,55 +86,147 @@ class QualityChecker(Station):
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=True)
 
     def process_product(self, product: Product):
-        """简化的产品检测流程"""
-        if not self.can_operate():
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 设备不可用")
-            yield self.buffer.put(product)
-            return
+        """
+        Quality check process following Station's timeout-get-put pattern.
+        """
+        try:
+            # Check if the device can operate
+            if not self.can_operate():
+                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
+                return
+
+            self.set_status(DeviceStatus.PROCESSING)
+
+            # Record processing start and get processing time
+            min_time, max_time = self.processing_times.get(product.product_type, (10, 15))
+            processing_time = random.uniform(min_time, max_time)
             
-        self.set_status(DeviceStatus.PROCESSING)
-        self.stats["inspected_count"] += 1
-        
-        # 记录开始检测
-        product.process_at_station(self.id, self.env.now)
-        product.start_inspection(self.env.now)
-        
-        print(f"[{self.env.now:.2f}] 🔍 {self.id}: 检测产品 {product.id}")
-        
-        # 执行检测 (简化为单一过程)
-        yield self.env.process(self._simple_inspection(product))
-        
-        # 做出决策
-        decision = self._make_simple_decision(product)
-        self.set_status(DeviceStatus.IDLE)
-        
-        yield self.env.process(self._execute_simple_decision(product, decision))
+            # Apply efficiency and fault impacts
+            efficiency_factor = getattr(self.performance_metrics, 'efficiency_rate', 100.0) / 100.0
+            actual_processing_time = processing_time / efficiency_factor
+            
+            print(f"[{self.env.now:.2f}] 🔍 {self.id}: 检测产品中... (预计{actual_processing_time:.1f}s)")
+            
+            # The actual processing work (timeout-get pattern like Station)
+            yield self.env.timeout(actual_processing_time)
+            product = yield self.buffer.get()
+            
+            # Record inspection start and process
+            product.process_at_station(self.id, self.env.now)
+            product.start_inspection(self.env.now)
+            
+            # Update statistics upon successful completion
+            self.stats["products_processed"] += 1
+            self.stats["inspected_count"] += 1
+            self.stats["total_processing_time"] += actual_processing_time
+            self.stats["average_processing_time"] = (
+                self.stats["total_processing_time"] / self.stats["products_processed"]
+            )
+            
+            # Perform quality inspection
+            decision = self._perform_quality_inspection(product)
+            
+            # Processing finished successfully
+            print(f"[{self.env.now:.2f}] {self.id}: Finished inspecting product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
+            
+            # Set to IDLE now, as core processing is done.
+            self.set_status(DeviceStatus.IDLE)
+            
+            # Execute decision (equivalent to transfer_product_to_next_stage)
+            yield self.env.process(self._execute_quality_decision(product, decision))
 
+        except simpy.Interrupt as e:
+            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: Inspection of product {product.id} was interrupted: {e.cause}")
+            if product not in self.buffer.items:
+                # 产品已取出，说明检测时间已经完成，应该继续流转
+                print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已检测完成，继续流转")
+                decision = self._perform_quality_inspection(product)
+                yield self.env.process(self._execute_quality_decision(product, decision))
+            else:
+                # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
+                print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 检测被中断，留在buffer中")
+        finally:
+            # Clear the action handle once the process is complete or interrupted
+            self.action = None
 
-    def _simple_inspection(self, product: Product):
-        """简化的检测过程"""
-        # 获取检测时间
-        min_time, max_time = self.processing_times.get(product.product_type, (10, 15))
-        inspection_time = random.uniform(min_time, max_time)
-        
-        # 考虑设备效率
-        efficiency = self.performance_metrics.efficiency_rate / 100.0
-        actual_time = inspection_time / efficiency
-        
-        print(f"[{self.env.now:.2f}] 🔍 {self.id}: 检测中... (预计{actual_time:.1f}s)")
-        yield self.env.timeout(actual_time)
-        
-        # 更新产品质量状态 (基于现有质量分数)
+    def _perform_quality_inspection(self, product: Product) -> SimpleDecision:
+        """Perform quality inspection and determine decision"""
+        # Update product quality status based on existing quality score
         quality_score = product.quality_metrics.overall_score
         
         if quality_score >= self.pass_threshold:
-            product.quality_status = QualityStatus.UNKNOWN  # 改用UNKNOWN表示通过
+            product.quality_status = QualityStatus.UNKNOWN  # UNKNOWN表示通过
         elif quality_score <= self.scrap_threshold:
             product.quality_status = QualityStatus.SCRAP  
         else:
             product.quality_status = QualityStatus.MAJOR_DEFECT
             
         product.complete_inspection(self.env.now, product.quality_status)
+        
+        # Make decision
+        return self._make_simple_decision(product)
+
+    def _execute_quality_decision(self, product: Product, decision: SimpleDecision):
+        """Execute quality decision (equivalent to _transfer_product_to_next_stage)"""
+        # Set status to INTERACTING before the potentially blocking operations
+        self.set_status(DeviceStatus.INTERACTING)
+        
+        if decision == SimpleDecision.PASS:
+            self.stats["passed_count"] += 1
+            print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
+            
+            # Check if output buffer is full and report if needed
+            if len(self.output_buffer.items) >= self.output_buffer_capacity:
+                self.report_buffer_full("output_buffer")
+            
+            # Put product into output buffer (may block if full)
+            yield self.output_buffer.put(product)
+            print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
+            
+        elif decision == SimpleDecision.SCRAP:
+            self.stats["scrapped_count"] += 1
+            self.stats["products_scrapped"] += 1
+            yield self.env.process(self._handle_product_scrap(product, "quality_inspection_failed"))
+            
+        elif decision == SimpleDecision.REWORK:
+            self.stats["reworked_count"] += 1
+            # 简单返工：回到最后一个加工工站
+            last_station = self._get_last_processing_station(product)
+            if last_station:
+                product.start_rework(self.env.now, last_station)
+                print(f"[{self.env.now:.2f}] 🔄 {self.id}: 产品 {product.id} 返工到 {last_station}")
+                # TODO: Implement actual rework transfer logic
+            else:
+                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法确定返工工站，产品报废")
+                yield self.env.process(self._handle_product_scrap(product, "rework_failed"))
+        
+        # Set status back to IDLE after the operation is complete
+        self.set_status(DeviceStatus.IDLE)
+
+    def _handle_product_scrap(self, product, reason: str):
+        """Handle product scrapping due to quality issues"""
+        from src.simulation.entities.product import QualityStatus, QualityDefect, DefectType
+        
+        # Set product status to scrapped
+        product.quality_status = QualityStatus.SCRAP
+        
+        # Add defect record
+        defect = QualityDefect(
+            defect_type=DefectType.SURFACE,  # Use SURFACE for quality inspection issues
+            severity=95.0,  # High severity for scrapped products
+            description=f"Product scrapped at {self.id} due to {reason}",
+            station_id=self.id,
+            detected_at=self.env.now
+        )
+        product.add_defect(defect)
+        
+        print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因{reason}报废")
+        
+        # Report scrapped product through base class
+        self.report_device_error("product_scrap", f"Product {product.id} scrapped due to {reason}")
+        
+        # Simulate scrap handling time
+        yield self.env.timeout(2.0)
 
     def _make_simple_decision(self, product: Product) -> SimpleDecision:
         """简化的决策逻辑"""
@@ -150,37 +242,6 @@ class QualityChecker(Station):
         else:
             # 有缺陷但可以返工
             return SimpleDecision.REWORK
-
-    def _execute_simple_decision(self, product: Product, decision: SimpleDecision):
-        """Execute decision, put passed products into output_buffer"""
-        if decision == SimpleDecision.PASS:
-            self.stats["passed_count"] += 1
-            print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
-            
-            # trigger fault report if output buffer is full
-            if len(self.output_buffer.items) >= self.output_buffer_capacity:
-                self.report_buffer_full("output_buffer")
-
-            # Use INTERACTING state for the transfer to output_buffer
-            self.set_status(DeviceStatus.INTERACTING)
-            
-            yield self.output_buffer.put(product)
-            print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
-            
-            self.set_status(DeviceStatus.IDLE)
-            
-        elif decision == SimpleDecision.SCRAP:
-            self.stats["products_scrapped"] += 1
-            print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 报废")
-        elif decision == SimpleDecision.REWORK:
-            self.stats["reworked_count"] += 1
-            # 简单返工：回到最后一个加工工站
-            last_station = self._get_last_processing_station(product)
-            if last_station:
-                product.start_rework(self.env.now, last_station)
-                print(f"[{self.env.now:.2f}] 🔄 {self.id}: 产品 {product.id} 返工到 {last_station}")
-            else:
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法确定返工工站，产品报废")
 
     def _get_last_processing_station(self, product: Product) -> str:
         """获取产品最后处理的工站 (排除QualityCheck)"""
