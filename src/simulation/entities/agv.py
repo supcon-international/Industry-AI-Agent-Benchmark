@@ -7,9 +7,13 @@ from src.simulation.entities.product import Product
 from src.simulation.entities.quality_checker import QualityChecker
 from src.simulation.entities.station import Station
 from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
+from src.simulation.entities.warehouse import RawMaterial, Warehouse
 from config.schemas import DeviceStatus, AGVStatus
 from config.topics import get_agv_status_topic
 from config.path_timing import get_travel_time, is_path_available
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AGV(Vehicle):
     """
@@ -244,7 +248,7 @@ class AGV(Vehicle):
                 success = True
                 
             # Station (父类)
-            elif isinstance(device, Station):
+            elif isinstance(device, Station) or isinstance(device, RawMaterial):
                 if len(device.buffer.items) == 0:
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
@@ -290,6 +294,7 @@ class AGV(Vehicle):
                 
             else:
                 feedback = f"不支持的设备类型: {type(device).__name__}"
+                logger.error(feedback)
                 return False, feedback, None
                 
             # 成功取货后的操作
@@ -343,7 +348,7 @@ class AGV(Vehicle):
                     success = yield self.env.process(device.add_product_to_buffer(product))
                         
             # Station (父类)
-            elif isinstance(device, Station):
+            elif isinstance(device, Station) or isinstance(device, Warehouse):
                 success = yield self.env.process(device.add_product_to_buffer(product))
                     
             # TripleBufferConveyor (先检查子类)

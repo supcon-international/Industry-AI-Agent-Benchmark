@@ -49,7 +49,7 @@ class CommandHandler:
                 self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, response_payload)
                 return
             
-            logger.info(f"Received valid command: {command.action} for {command.target}")
+            logger.debug(f"Received valid command: {command.action} for {command.target}")
             
             # Route the command to the appropriate handler
             self._execute_command(command)
@@ -104,7 +104,7 @@ class CommandHandler:
     def _handle_test_command(self, target: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle test MQTT commands."""
         msg = f"Received MQTT test command to {target} with params: {json.dumps(params)}"
-        logger.info(msg)
+        logger.debug(msg)
         payload = SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json()
         self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, payload)
         return True
@@ -157,6 +157,7 @@ class CommandHandler:
             logger.error(msg)
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=f"Device {device_id} not found in factory").model_dump_json())
             return
+        logger.info(f"AGV {agv_id} loading {product_id} from {device_id} with buffer_type {buffer_type}")
         self.factory.env.process(agv.load_from(device, buffer_type, product_id))
 
     def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
@@ -182,6 +183,7 @@ class CommandHandler:
             logger.error(msg)
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
+        logger.info(f"AGV {agv_id} unloading {device_id} with buffer_type {buffer_type}")
         self.factory.env.process(agv.unload_to(device, buffer_type))
 
     def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
