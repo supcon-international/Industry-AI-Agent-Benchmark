@@ -18,7 +18,7 @@ class Conveyor(BaseConveyor):
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
-        self._auto_transfer_proc = None
+        self.action = None
         self.transfer_time = 5.0 # 模拟搬运时间
         self.resumed = self.env.event() # 恢复信号
         self.resumed.succeed() # 初始状态是“已恢复”
@@ -59,8 +59,8 @@ class Conveyor(BaseConveyor):
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer."""
         self.downstream_station = station
-        if self._auto_transfer_proc is None:
-            self._auto_transfer_proc = self.env.process(self.run())
+        if self.action is None:
+            self.action = self.env.process(self.run())
 
     def push(self, product):
         """Put a product on the conveyor (may block if full)."""
@@ -94,6 +94,10 @@ class Conveyor(BaseConveyor):
         """Auto-transfer products to downstream station's buffer if possible."""
         while True:
             if self.downstream_station is not None:
+                # 先等待buffer中有产品
+                while len(self.buffer.items) == 0:
+                    yield self.env.timeout(0.1)  # 短暂等待
+                
                 # Before putting, check if the station can operate
                 if not self.downstream_station.can_operate():
                     # 发布blocked状态
@@ -103,6 +107,7 @@ class Conveyor(BaseConveyor):
 
                 yield self.resumed
 
+                # 现在确定有产品了，获取并立即处理
                 product = yield self.buffer.get()
                 self.publish_status()
                 try:
@@ -123,6 +128,14 @@ class Conveyor(BaseConveyor):
             else:
                 yield self.env.timeout(1.0)
 
+    def recover(self):
+        """Custom recovery logic for the conveyor."""
+        print(f"[{self.env.now:.2f}] ✅ Conveyor {self.id} is recovering.")
+        if hasattr(self, 'resumed') and not self.resumed.triggered:
+            self.resumed.succeed()
+        # 恢复后，它应该继续工作，而不是空闲
+        self.set_status(DeviceStatus.WORKING)
+
 class TripleBufferConveyor(BaseConveyor):
     """
     Conveyor with three buffers:
@@ -137,7 +150,7 @@ class TripleBufferConveyor(BaseConveyor):
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
         self.downstream_station = None  # QualityCheck
-        self._auto_transfer_proc = None
+        self.action = None
         self.transfer_time = 5.0 # 模拟搬运时间
         self.resumed = self.env.event() # 恢复信号
         self.resumed.succeed() # 初始状态是“已恢复”
@@ -187,8 +200,8 @@ class TripleBufferConveyor(BaseConveyor):
     def set_downstream_station(self, station):
         """Set the downstream station for auto-transfer from main_buffer."""
         self.downstream_station = station
-        if self._auto_transfer_proc is None:
-            self._auto_transfer_proc = self.env.process(self.run())
+        if self.action is None:
+            self.action = self.env.process(self.run())
 
     def push(self, product, buffer_type="main"):
         """Put product into specified buffer. buffer_type: 'main', 'upper', 'lower'."""
@@ -238,6 +251,10 @@ class TripleBufferConveyor(BaseConveyor):
         """Auto-transfer products from main_buffer to downstream station if possible."""
         while True:
             if self.downstream_station is not None:
+                # 先等待main_buffer中有产品
+                while len(self.main_buffer.items) == 0:
+                    yield self.env.timeout(0.1)  # 短暂等待
+                
                 # Before putting, check if the station can operate
                 if not self.downstream_station.can_operate():
                     # 发布blocked状态
@@ -247,6 +264,7 @@ class TripleBufferConveyor(BaseConveyor):
 
                 yield self.resumed
 
+                # 现在确定有产品了，获取并立即处理
                 product = yield self.main_buffer.get()
                 self.publish_status()
                 try:
@@ -264,3 +282,11 @@ class TripleBufferConveyor(BaseConveyor):
                     self.publish_status()
             else:
                 yield self.env.timeout(1.0)
+
+    def recover(self):
+        """Custom recovery logic for the TripleBufferConveyor."""
+        print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id} is recovering.")
+        if hasattr(self, 'resumed') and not self.resumed.triggered:
+            self.resumed.succeed()
+        # 恢复后，它应该继续工作，而不是空闲
+        self.set_status(DeviceStatus.WORKING)

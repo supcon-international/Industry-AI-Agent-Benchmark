@@ -202,7 +202,6 @@ class Factory:
                 'device_id': device_id,
                 'device_type': detailed_status.device_type,
                 'status': detailed_status.current_status.value,
-                'has_fault': detailed_status.has_fault,
                 'symptom': detailed_status.fault_symptom,
                 'temperature': detailed_status.temperature,
                 'efficiency_rate': detailed_status.efficiency_rate,
@@ -233,9 +232,6 @@ class Factory:
         """Start processes to publish device status to MQTT."""        
         # Start factory overall status publishing
         self.env.process(self._publish_factory_status())
-        
-        # Start enhanced fault events publishing  
-        self.env.process(self._publish_fault_events())
     
     
     def _publish_factory_status(self):

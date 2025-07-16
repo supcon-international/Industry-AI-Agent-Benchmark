@@ -22,6 +22,7 @@ from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from src.agent_interface.command_handler import CommandHandler
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, LOG_LEVEL
+from src.game_logic.fault_system import FaultType
 
 # Configure logging
 logging.basicConfig(
@@ -135,7 +136,7 @@ def signal_handler(signum, frame):
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     sys.exit(0)
 
-def menu_input_thread(mqtt_client):
+def menu_input_thread(mqtt_client, factory):
     import json
     from config.topics import AGENT_COMMANDS_TOPIC
     while True:
@@ -144,7 +145,8 @@ def menu_input_thread(mqtt_client):
         print("2. 装载")
         print("3. 卸载")
         print("4. 充电")
-        print("5. 退出")
+        print("5. 注入故障")
+        print("6. 退出")
         op = input("> ").strip()
         if op == "1":
             agv_id = input("请输入AGV编号: ").strip()
@@ -152,7 +154,7 @@ def menu_input_thread(mqtt_client):
             agv_id = "AGV_" + agv_id
             target_point = "P" + target_point
             cmd = {
-                "action": "move_agv",
+                "action": "move",
                 "target": agv_id,
                 "params": {"target_point": target_point}
             }
@@ -161,10 +163,11 @@ def menu_input_thread(mqtt_client):
             device_id = input("请输入装载设备编号: ").strip()
             agv_id = "AGV_" + agv_id
             buffer_type = input("请输入buffer类型: ").strip()
+            product_id = input("请输入产品编号（不必须）: ").strip()
             cmd = {
-                "action": "load_agv",
+                "action": "load",
                 "target": agv_id,
-                "params": {"device_id": device_id, "buffer_type": buffer_type}
+                "params": {"device_id": device_id, "buffer_type": buffer_type, "product_id": product_id}
             }
         elif op == "3":
             agv_id = input("请输入AGV编号: ").strip()
@@ -172,7 +175,7 @@ def menu_input_thread(mqtt_client):
             device_id = input("请输入卸载设备编号: ").strip()
             buffer_type = input("请输入buffer类型: ").strip()
             cmd = {
-                "action": "unload_agv",
+                "action": "unload",
                 "target": agv_id,
                 "params": {"device_id": device_id, "buffer_type": buffer_type}
             }
@@ -186,11 +189,29 @@ def menu_input_thread(mqtt_client):
                 print("目标电量需为数字！")
                 continue
             cmd = {
-                "action": "charge_agv",
+                "action": "charge",
                 "target": agv_id,
                 "params": {"target_level": target_level}
             }
         elif op == "5":
+            device_id = input("请输入设备编号: ").strip()
+            fault_type = input("请输入故障类型 1:AGV故障 2:工站故障 3:传送带故障: ").strip()
+            fault_duration = input("请输入故障持续时间: ").strip()
+            try:
+                fault_duration = float(fault_duration)
+                if fault_type == "1":
+                    fault_type = FaultType.AGV_FAULT
+                elif fault_type == "2":
+                    fault_type = FaultType.STATION_FAULT
+                elif fault_type == "3":
+                    fault_type = FaultType.CONVEYOR_FAULT
+            except Exception:
+                print("故障持续时间需为数字！")
+                continue
+            factory.fault_system._inject_fault_now(device_id, fault_type, fault_duration)
+            print(f"已注入故障: {device_id} {fault_type} {fault_duration}")
+            continue
+        elif op == "6":
             print("退出菜单输入线程。")
             break
         else:
@@ -222,7 +243,7 @@ def main(argv=None):
         simulation.initialize(no_faults=args.no_faults) # Pass the argument to initialize
         # Start menu input thread after MQTT client is ready
         import threading
-        threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client,), daemon=True).start()
+        threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory), daemon=True).start()
         simulation.run()  # Run indefinitely
     except Exception as e:
         logger.error(f"❌ Failed to start simulation: {e}")

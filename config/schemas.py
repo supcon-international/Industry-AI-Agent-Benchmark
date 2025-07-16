@@ -45,7 +45,6 @@ class DeviceDetailedStatus(BaseModel):
     operating_hours: float = Field(..., description="运行小时数")
     
     # 故障相关
-    has_fault: bool = Field(..., description="是否有故障")
     fault_symptom: Optional[str] = Field(None, description="故障症状")
     frozen_until: Optional[float] = Field(None, description="冻结到什么时候")
     
@@ -76,7 +75,7 @@ class AgentCommand(BaseModel):
     Schema for commands sent by the agent to the factory.
     Published to: factory/agent/commands
     """
-    command_id: str = Field(..., description="The ID of the command.")
+    command_id: Optional[str] = Field(None, description="The ID of the command.")
     action: str = Field(..., description="The action to be performed, e.g., 'move_agv'.")
     target: str = Field(..., description="The ID of the device or entity to act upon.")
     params: Dict[str, Any] = Field({}, description="A dictionary of parameters for the action.")
@@ -87,7 +86,7 @@ class SystemResponse(BaseModel):
     Published to: factory/agent/responses
     """
     timestamp: float = Field(..., description="Simulation timestamp of the response.")
-    command_id: str = Field(..., description="The ID of the command.")
+    command_id: Optional[str] = Field(None, description="The ID of the command.")
     response: str = Field(..., description="The response to the command.")
 
 class StationStatus(BaseModel):

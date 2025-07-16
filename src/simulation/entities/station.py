@@ -96,17 +96,35 @@ class Station(Device):
     def run(self):
         """The main operational loop for the station."""
         while True:
-            # 检查设备是否可以操作
-            if not self.can_operate():
-                # 设备无法操作时等待
-                yield self.env.timeout(1)  # 每1秒检查一次
+            try:
+                # 等待设备可操作且buffer有产品
+                yield self.env.process(self._wait_for_ready_state())
+                
+                # 如果能到这里，说明设备可操作且有产品
+                if len(self.buffer.items) > 0:
+                    product = self.buffer.items[0]
+                    self.action = self.env.process(self.process_product(product))
+                    yield self.action
+                    
+            except simpy.Interrupt:
+                # 被中断（通常是故障），继续循环
                 continue
-            product = yield self.buffer.get()
-            print(f"[{self.env.now:.2f}] 📦 {self.id}: 从缓冲区获取产品 {product.id}开始自动加工")
-
-            self.set_status(DeviceStatus.PROCESSING)
-            # The process_product method now handles getting the product from the buffer.
-            yield self.env.process(self.process_product(product))
+    
+    def _wait_for_ready_state(self):
+        """等待设备处于可操作状态且buffer有产品"""
+        while True:
+            # 如果设备不可操作，等待
+            if not self.can_operate():
+                yield self.env.timeout(1)
+                continue
+            
+            # 如果buffer为空，等待
+            if len(self.buffer.items) == 0:
+                yield self.env.timeout(0.1)
+                continue
+            
+            # 设备可操作且有产品，返回
+            return
 
     def process_product(self, product: Product):
         """
@@ -118,25 +136,22 @@ class Station(Device):
             # Check if the device can operate
             if not self.can_operate():
                 print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
-                yield self.buffer.put(product)
-                self.set_status(DeviceStatus.FAULT)
                 return
 
             self.set_status(DeviceStatus.PROCESSING)
 
             # Record processing start and get processing time
-            product.process_at_station(self.id, self.env.now)
             min_time, max_time = self.processing_times.get(product.product_type, (10, 20))
             processing_time = random.uniform(min_time, max_time)
             
             # Apply efficiency and fault impacts
-            efficiency_factor = self.performance_metrics.efficiency_rate / 100.0
+            efficiency_factor = getattr(self.performance_metrics, 'efficiency_rate', 100.0) / 100.0
             actual_processing_time = processing_time / efficiency_factor
-            if self.has_fault:
-                actual_processing_time *= random.uniform(1.2, 2.0)
             
             # The actual processing work
             yield self.env.timeout(actual_processing_time)
+            product = yield self.buffer.get()
+            product.process_at_station(self.id, self.env.now)
 
             # Update statistics upon successful completion
             self.stats["products_processed"] += 1
@@ -165,12 +180,17 @@ class Station(Device):
             yield self.env.process(self._transfer_product_to_next_stage(product))
 
         except simpy.Interrupt as e:
-            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: Processing of product {product.id} was interrupted: {e}")
-            # Safely return the product to the input buffer
-            yield self.buffer.put(product)
-            # Ensure status is reset to IDLE after an interruption
-            self.set_status(DeviceStatus.IDLE)
-            return # Stop further processing for this product
+            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: Processing of product {product.id} was interrupted: {e.cause}")
+            if product not in self.buffer.items:
+          # 产品已取出，说明处理时间已经完成，应该继续流转
+                print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
+                yield self.env.process(self._transfer_product_to_next_stage(product))
+            else:
+          # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
+                print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
+        finally:
+            # Clear the action handle once the process is complete or interrupted
+            self.action = None
         
     def _handle_product_scrap(self, product, reason: str):
         """Handle product scrapping due to quality issues"""

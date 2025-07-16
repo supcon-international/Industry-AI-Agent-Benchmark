@@ -40,6 +40,7 @@ class AGV(Vehicle):
         charging_speed: float = 3.33,  # 充电速度(30秒充满)
         battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
         battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
+        fault_system=None, # Injected dependency
         mqtt_client=None
     ):
         if position not in path_points.values():
@@ -49,6 +50,7 @@ class AGV(Vehicle):
         self.battery_level = 40.0
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
+        self.fault_system = fault_system
         self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
         self.path_points = path_points
         self.target_point = None # current target point if moving
@@ -70,13 +72,6 @@ class AGV(Vehicle):
             "tasks_completed": 0,
             "tasks_interrupted": 0
         }
-        
-        # 更新设备特定属性
-        self._specific_attributes.update({
-            "battery_level": self.battery_level,
-            "charging_point": self.charging_point,
-            "low_battery_threshold": self.low_battery_threshold
-        })
 
         # Publish initial status upon creation
         self.publish_status("initialized")
@@ -88,9 +83,6 @@ class AGV(Vehicle):
             
         old_level = self.battery_level
         self.battery_level = max(0.0, self.battery_level - amount)
-        
-        # 更新设备属性
-        self._specific_attributes["battery_level"] = self.battery_level
         
         if old_level > self.low_battery_threshold and self.battery_level <= self.low_battery_threshold:
             # 电量首次降到阈值以下时告警
@@ -130,55 +122,83 @@ class AGV(Vehicle):
         Args:
             target_point: Path point name (e.g., "LP1", "UP3")
         """
-        if not self.can_operate():
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法移动，设备不可用")
-            return
+        # Wrap the core logic in a process to make it interruptible
+        self.action = self.env.process(self._move_to_process(target_point))
+        try:
+            yield self.action
+        except simpy.Interrupt as e:
+            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: Movement to {target_point} interrupted: {e.cause}")
+            # The fault system handles the status change.
+            # We just need to stop the current action.
             
-        if target_point not in self.path_points:
-            print(f"[{self.env.now:.2f}] ❌ {self.id}: 未知路径点 {target_point}")
-            return
+    def _move_to_process(self, target_point: str):
+        """The actual process logic for move_to, to be wrapped by self.action."""
+        try:
+            if not self.can_operate():
+                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法移动，设备不可用"
+                print(msg)
+                self.publish_status(msg)
+                return
+                
+            if target_point not in self.path_points:
+                msg = f"[{self.env.now:.2f}] ❌ {self.id}: 未知路径点 {target_point}"
+                print(msg)
+                self.publish_status(msg)
+                return
+                
+            self.target_point = target_point
+    
+            # use path timing to get travel time
+            travel_time = get_travel_time(self.current_point, target_point)
+            if travel_time < 0:
+                msg = f"[{self.env.now:.2f}] ❌ {self.id}: 无法找到从 {self.current_point} 到 {target_point} 的路径"
+                print(msg)
+                self.publish_status(msg)
+                return
+                
+            # check if battery is enough
+            if not self.can_complete_task(travel_time, 1):
+                msg = f"[{self.env.now:.2f}] 🔋 {self.id}: 电量不足，无法移动到 {target_point}"
+                print(msg)
+                self.publish_status(msg)
+                self.stats["tasks_interrupted"] += 1
+                yield self.env.process(self.emergency_charge())
+                return
+                
+            self.set_status(DeviceStatus.MOVING, f"moving to {target_point} from {self.current_point}, estimated time: {travel_time:.1f}s")
+            print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]} (预计时间: {travel_time:.1f}s)")
             
-        self.target_point = target_point
+            # wait for move to complete
+            self.estimated_time = travel_time
+            yield self.env.timeout(travel_time)
+            
+            # update position and consume battery
+            self.position = self.path_points[target_point]
+            self.current_point = target_point
+            self.target_point = None
+            self.estimated_time = 0.0
+            
+            # calculate battery consumption based on travel time
+            distance = travel_time * self.speed_mps
+            self.consume_battery(distance * self.battery_consumption_per_meter, f"移动到{target_point}")
+            self.consume_battery(self.battery_consumption_per_action, "路径点操作")
+            
+            # update statistics
+            self.stats["total_distance"] += distance
+            self.stats["tasks_completed"] += 1
+            
+            print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
+            
+            # Before setting to IDLE, check for pending faults
+            if self._check_and_trigger_pending_fault():
+                return # Fault injected, do not become idle
 
-        # use path timing to get travel time
-        travel_time = get_travel_time(self.current_point, target_point)
-        if travel_time < 0:
-            print(f"[{self.env.now:.2f}] ❌ {self.id}: 无法找到从 {self.current_point} 到 {target_point} 的路径")
-            return
-            
-        # check if battery is enough
-        if not self.can_complete_task(travel_time, 1):
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量不足，无法移动到 {target_point}")
-            self.stats["tasks_interrupted"] += 1
-            yield self.env.process(self.emergency_charge())
-            return
-            
-        self.set_status(DeviceStatus.MOVING, f"moving to {target_point} from {self.current_point}, estimated time: {travel_time:.1f}s")
-        print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]} (预计时间: {travel_time:.1f}s)")
+            self.set_status(DeviceStatus.IDLE, f"arrived at {target_point}")
         
-        # wait for move to complete
-        self.estimated_time = travel_time
-        yield self.env.timeout(travel_time)
-        
-        # update position and consume battery
-        self.position = self.path_points[target_point]
-        self.current_point = target_point
-        self.target_point = None
-        self.estimated_time = 0.0
-        
-        # calculate battery consumption based on travel time
-        distance = travel_time * self.speed_mps
-        self.consume_battery(distance * self.battery_consumption_per_meter, f"移动到{target_point}")
-        self.consume_battery(self.battery_consumption_per_action, "路径点操作")
-        
-        # update statistics
-        self.stats["total_distance"] += distance
-        self.stats["tasks_completed"] += 1
-        
-        print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
-        self.set_status(DeviceStatus.IDLE, f"arrived at {target_point}")
-        
-    def load_from(self, device:Device, buffer_type=None, product_id=None, action_time_factor=1):
+        finally:
+            self.action = None
+
+    def load_from(self, device:Device, buffer_type=None, product_id=None, action_time_factor=1) :
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         """
         # check battery level
@@ -390,12 +410,16 @@ class AGV(Vehicle):
         
         # charging completed
         self.battery_level = target_level
-        self._specific_attributes["battery_level"] = self.battery_level
         
         # update statistics
         self.stats["total_charge_time"] += charge_time
         
         print(f"[{self.env.now:.2f}] ✅ {self.id}: 充电完成，当前电量: {self.battery_level:.1f}%")
+
+        # Before setting to IDLE, check for pending faults
+        if self._check_and_trigger_pending_fault():
+            return # Fault injected, do not become idle
+
         self.set_status(DeviceStatus.IDLE, f"charged to {target_level:.1f}%")
 
     def emergency_charge(self):
@@ -413,7 +437,13 @@ class AGV(Vehicle):
         print(f"[{self.env.now:.2f}] 🔋 {self.id}: voluntary charging")
         self.stats["voluntary_charge_count"] += 1
         
-        yield self.env.process(self.charge_battery(target_level, f"voluntary charging to {target_level:.1f}%"))
+        self.action = self.env.process(self.charge_battery(target_level, f"voluntary charging to {target_level:.1f}%"))
+        try:
+            yield self.action
+        except simpy.Interrupt as e:
+            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: Charging interrupted: {e.cause}")
+        finally:
+            self.action = None
 
     def auto_charge_if_needed(self):
         """auto check and charge if needed (background process)"""
@@ -471,6 +501,19 @@ class AGV(Vehicle):
     def get_path_point_position(self, point_name: str) -> Optional[Tuple[int, int]]:
         """获取路径点的坐标"""
         return self.path_points.get(point_name)
+
+    def _check_and_trigger_pending_fault(self) -> bool:
+        """
+        Checks if a fault is pending for this AGV and triggers it.
+        This is called internally just before the AGV becomes IDLE.
+        Returns True if a fault was triggered, False otherwise.
+        """
+        if self.fault_system and self.id in self.fault_system.pending_agv_faults:
+            fault_type = self.fault_system.pending_agv_faults.pop(self.id)
+            print(f"[{self.env.now:.2f}] 💥 AGV {self.id} is idle, triggering pending fault: {fault_type.value}")
+            self.fault_system._inject_fault_now(self.id, fault_type)
+            return True
+        return False
 
     def __repr__(self) -> str:
         return f"AGV(id='{self.id}', battery={self.battery_level:.1f}%, payload={len(self.payload.items)}/{self.payload_capacity})"

@@ -1,7 +1,7 @@
 # src/agent_interface/command_handler.py
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from config.schemas import AgentCommand, SystemResponse
 from config.topics import AGENT_COMMANDS_TOPIC, AGENT_RESPONSES_TOPIC
@@ -39,8 +39,15 @@ class CommandHandler:
             # Parse JSON payload
             command_data = json.loads(payload.decode('utf-8'))
             
-            # Validate using Pydantic schema
-            command = AgentCommand.model_validate(command_data)
+            try:
+                # Validate using Pydantic schema
+                command = AgentCommand.model_validate(command_data)
+            except Exception as e:
+                msg = f"Failed to validate command: {e}"    
+                logger.error(msg)
+                response_payload = SystemResponse(timestamp=self.factory.env.now, response=msg, command_id=command_data.get("command_id")).model_dump_json()
+                self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, response_payload)
+                return
             
             logger.info(f"Received valid command: {command.action} for {command.target}")
             
@@ -50,7 +57,7 @@ class CommandHandler:
         except Exception as e:
             msg = f"Failed to process command: {e}"
             logger.error(msg)
-            response_payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
+            response_payload = SystemResponse(timestamp=self.factory.env.now, command_id=command_data.get("command_id"), response=msg).model_dump_json()
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, response_payload)
 
     def _execute_command(self, command: AgentCommand):
@@ -60,18 +67,18 @@ class CommandHandler:
         action = command.action
         params = command.params
         target = command.target
-        
+        command_id = command.command_id
         try:
-            if action == "test_command":
-                self._handle_test_command(target, params)
-            elif action == "move_agv":
-                self._handle_move_agv(target, params)
-            elif action == "load_agv":
-                self._handle_load_agv(target, params)
-            elif action == "unload_agv":
-                self._handle_unload_agv(target, params)
-            elif action == "charge_agv":
-                self._handle_charge_agv(target, params)
+            if action == "test":
+                self._handle_test_command(target, params, command_id)
+            elif action == "move":
+                self._handle_move_agv(target, params, command_id)
+            elif action == "load":
+                self._handle_load_agv(target, params, command_id)
+            elif action == "unload":
+                self._handle_unload_agv(target, params, command_id)
+            elif action == "charge":
+                self._handle_charge_agv(target, params, command_id)
             elif action == "agv_action_sequence":
                 self._handle_agv_action_sequence(target, params)
             elif action == "request_maintenance":
@@ -94,97 +101,108 @@ class CommandHandler:
         except Exception as e:
             logger.error(f"Failed to execute command {action}: {e}")
 
-    def _handle_test_command(self, target: str, params: Dict[str, Any]):
+    def _handle_test_command(self, target: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle test MQTT commands."""
         msg = f"Received MQTT test command to {target} with params: {json.dumps(params)}"
         logger.info(msg)
-        payload = SystemResponse(timestamp=self.factory.env.now, response=msg).model_dump_json()
+        payload = SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json()
         self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, payload)
         return True
 
-    def _handle_move_agv(self, agv_id: str, params: Dict[str, Any]):
+    def _handle_move_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV movement commands.
         params: {target_point: str}
         """
         target_point = params.get("target_point")
         if not target_point:
-            logger.error("move_agv command missing 'target_point' parameter")
+            msg = "move_agv command missing 'target_point' parameter"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json())
             return
             
         if agv_id not in self.factory.agvs:
-            logger.error(f"AGV {agv_id} not found in factory")
+            msg = f"AGV {agv_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
             
-        # For now, we assume the AGV is already at a known path point.
-        # In a complete implementation, we'd need to determine the AGV's current path point.
         agv = self.factory.agvs[agv_id]
         
-        logger.info(f"Moving {agv_id} from {agv.position} to {target_point}")
+        logger.info(f"Moving {agv_id} from {agv.current_point} to {target_point}")
 
         # Schedule the movement in the simulation
         self.factory.env.process(agv.move_to(target_point))
 
-    def _handle_load_agv(self, agv_id: str, params: Dict[str, Any]):
+    def _handle_load_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV load commands.
-        params: {device_id: str, buffer_type: str}
+        params: {device_id: str, buffer_type: str, product_id: str}
         """
         device_id = params.get("device_id")
         buffer_type = params.get("buffer_type")
+        product_id = params.get("product_id")
         if not device_id:
-            logger.error("load_agv command missing 'device_id' parameter")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="load_agv command missing 'device_id' parameter").model_dump_json())
+            msg = "load_agv command missing 'device_id' parameter"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
         if agv_id not in self.factory.agvs:
-            logger.error(f"AGV {agv_id} not found in factory")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
+            msg = f"AGV {agv_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=f"AGV {agv_id} not found in factory").model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
         device = self.factory.all_devices.get(device_id)
         if not device:
-            logger.error(f"Device {device_id} not found in factory")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"Device {device_id} not found in factory").model_dump_json())
+            msg = f"Device {device_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=f"Device {device_id} not found in factory").model_dump_json())
             return
-        self.factory.env.process(agv.load_from(device, buffer_type))
+        self.factory.env.process(agv.load_from(device, buffer_type, product_id))
 
-    def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any]):
+    def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV unload commands.
         params: {device_id: str, buffer_type: str}
         """
         device_id = params.get("device_id")
         buffer_type = params.get("buffer_type")
         if not device_id:
-            logger.error("unload_agv command missing 'device_id' parameter")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="unload_agv command missing 'device_id' parameter").model_dump_json())
+            msg = "unload_agv command missing 'device_id' parameter"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
         if agv_id not in self.factory.agvs:
-            logger.error(f"AGV {agv_id} not found in factory")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
+            msg = f"AGV {agv_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
         device = self.factory.all_devices.get(device_id)
         if not device:
-            logger.error(f"Device {device_id} not found in factory")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"Device {device_id} not found in factory").model_dump_json())
+            msg = f"Device {device_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
         self.factory.env.process(agv.unload_to(device, buffer_type))
 
-    def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any]):
+    def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV charge commands.
         params: {target_level: float, action_time_factor: float}
         """
         target_level = params.get("target_level")
         if not target_level:
-            logger.error("charge_agv command missing 'target_level' parameter")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response="charge_agv command missing 'target_level' parameter").model_dump_json())
+            msg = "charge_agv command missing 'target_level' parameter"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json())
             return
         if agv_id not in self.factory.agvs:
-            logger.error(f"AGV {agv_id} not found in factory")
-            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, response=f"AGV {agv_id} not found in factory").model_dump_json())
+            msg = f"AGV {agv_id} not found in factory"
+            logger.error(msg)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
         self.factory.env.process(agv.voluntary_charge(target_level))
 
-    def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any]):
+    def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """支持agent一次下发一串AGV动作，仿真端按序执行并反馈。params: {actions: [{type, args}]}
         type: move/load/unload; args: dict
         """
@@ -247,7 +265,7 @@ class CommandHandler:
                 else:
                     feedback = f"未知动作类型: {act_type}"
                 # 反馈
-                resp = SystemResponse(timestamp=env.now, response=f"[{idx+1}/{len(actions)}] {act_type}: {feedback}").model_dump_json()
+                resp = SystemResponse(timestamp=env.now, command_id=command_id, response=f"[{idx+1}/{len(actions)}] {act_type}: {feedback}").model_dump_json()
                 self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, resp)
                 # 若失败则中断后续
                 if not success:
