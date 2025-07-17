@@ -146,7 +146,7 @@ warehouses:
 
 # 订单生成器配置
 order_generator:
-  generation_interval_range: [30, 60]  # 最小/最大间隔 (秒)
+  generation_interval_range: [10, 10]  # 最小/最大间隔 (秒)
   quantity_weights:
     1: 0.40
     2: 0.30

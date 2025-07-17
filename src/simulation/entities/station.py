@@ -21,7 +21,6 @@ class Station(Device):
         processing_times (Dict[str, Tuple[int, int]]): A dictionary mapping product types
             to a tuple of (min_time, max_time) for processing.
         product_transfer_callback (Callable): Callback function to transfer products to next station
-        product_scrap_callback (Callable): Callback function to handle scrapped products
         downstream_conveyor (Conveyor): The conveyor downstream from this station
     """
     
@@ -48,17 +47,16 @@ class Station(Device):
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.processing_times = processing_times
         
-        # 工站特定属性初始化
-        self._specific_attributes.update({
-            "precision_level": random.uniform(95.0, 100.0),  # 加工精度水平
-            "tool_wear_level": random.uniform(0.0, 20.0),    # 刀具磨损程度
-            "lubricant_level": random.uniform(80.0, 100.0)   # 润滑油水平
-        })
+        # # 工站特定属性初始化
+        # self._specific_attributes.update({
+        #     "precision_level": random.uniform(95.0, 100.0),  # 加工精度水平
+        #     "tool_wear_level": random.uniform(0.0, 20.0),    # 刀具磨损程度
+        #     "lubricant_level": random.uniform(80.0, 100.0)   # 润滑油水平
+        # })
         
         # 统计数据
         self.stats = {
             "products_processed": 0,
-            "products_scrapped": 0,
             "total_processing_time": 0.0,
             "average_processing_time": 0.0
         }
@@ -70,14 +68,14 @@ class Station(Device):
         # Publish initial status
         self.publish_status()
 
-    def set_status(self, new_status: DeviceStatus):
+    def set_status(self, new_status: DeviceStatus, message: Optional[str] = None):
         """Overrides the base method to publish status on change."""
         if self.status == new_status:
             return
-        super().set_status(new_status)
-        self.publish_status()
+        super().set_status(new_status, message)
+        self.publish_status(message)
 
-    def publish_status(self, **kwargs):
+    def publish_status(self, message: Optional[str] = None):
         """Publishes the current status of the station to MQTT."""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
@@ -159,16 +157,7 @@ class Station(Device):
             self.stats["average_processing_time"] = (
                 self.stats["total_processing_time"] / self.stats["products_processed"]
             )
-
-            # Check for quality issues
-            precision_level = self._specific_attributes.get("precision_level", 100.0)
-            if precision_level < 80.0:
-                scrap_chance = (80.0 - precision_level) / 80.0
-                if random.random() < scrap_chance:
-                    yield self.env.process(self._handle_product_scrap(product, "precision_issue"))
-                    self.set_status(DeviceStatus.IDLE)
-                    return # Scrap handling is a terminal action for this product
-
+            
             # Processing finished successfully
             print(f"[{self.env.now:.2f}] {self.id}: Finished processing product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
             
@@ -180,45 +169,19 @@ class Station(Device):
             yield self.env.process(self._transfer_product_to_next_stage(product))
 
         except simpy.Interrupt as e:
-            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: Processing of product {product.id} was interrupted: {e.cause}")
+            message = f"Processing of product {product.id} was interrupted: {e.cause}"
+            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: {message}")
             if product not in self.buffer.items:
           # 产品已取出，说明处理时间已经完成，应该继续流转
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
                 yield self.env.process(self._transfer_product_to_next_stage(product))
             else:
           # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
+                product.rework_count += 1
                 print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
         finally:
             # Clear the action handle once the process is complete or interrupted
             self.action = None
-        
-    def _handle_product_scrap(self, product, reason: str):
-        """Handle product scrapping due to quality issues"""
-        from src.simulation.entities.product import QualityStatus, QualityDefect, DefectType
-        
-        # Set product status to scrapped
-        product.quality_status = QualityStatus.SCRAP
-        
-        # Add defect record
-        defect = QualityDefect(
-            defect_type=DefectType.DIMENSIONAL,  # Use DIMENSIONAL for precision issues
-            severity=90.0,  # High severity for scrapped products
-            description=f"Product scrapped at {self.id} due to {reason}",
-            station_id=self.id,
-            detected_at=self.env.now
-        )
-        product.add_defect(defect)
-        
-        # Update statistics
-        self.stats["products_scrapped"] += 1
-        
-        print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因{reason}报废")
-        
-        # Report scrapped product through base class
-        self.report_device_error("product_scrap", f"Product {product.id} scrapped due to {reason}")
-        
-        # Simulate scrap handling time
-        yield self.env.timeout(2.0)
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
@@ -233,28 +196,16 @@ class Station(Device):
 
         # TripleBufferConveyor special handling (only StationC)
         if isinstance(self.downstream_conveyor, TripleBufferConveyor):
-            if product.product_type == "P3":
-                # P3 product to the least full buffer (upper/lower)
-                # 检查哪个buffer比较空，但不需要while循环等待
-                if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
-                    self.report_buffer_full("downstream_conveyor_all_branch_buffer")
-
-                if self.downstream_conveyor.is_full("upper"):
-                    chosen_buffer = "lower"
-                elif self.downstream_conveyor.is_full("lower"):
-                    chosen_buffer = "upper"
-                else:
-                    # 选择较空的buffer
-                    if len(self.downstream_conveyor.upper_buffer.items) <= len(self.downstream_conveyor.lower_buffer.items):
-                        chosen_buffer = "upper"
-                    else:
-                        chosen_buffer = "lower"
-                        
+            # 使用Product的智能路由决策
+            target_buffer = self._determine_target_buffer_for_product(product)
+            
+            if target_buffer in ["upper", "lower"]:
+                # P3产品返工路径：选择最优的side buffer
+                chosen_buffer = self._choose_optimal_side_buffer(target_buffer)
                 yield self.downstream_conveyor.push(product, buffer_type=chosen_buffer)
-                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3) moved to downstream {chosen_buffer} buffer")
+                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3-返工) moved to downstream {chosen_buffer} buffer")
             else:
-                # not P3 product, move to main buffer
-
+                # 主流程路径：直接到main buffer
                 yield self.downstream_conveyor.push(product, buffer_type="main")
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream main buffer")
         else:
@@ -264,6 +215,50 @@ class Station(Device):
         # Set status back to IDLE after the push operation is complete
         self.set_status(DeviceStatus.IDLE)
         return
+
+    def _determine_target_buffer_for_product(self, product):
+        """根据产品类型和工艺状态确定目标buffer"""
+        if product.product_type != "P3":
+            return "main"
+        
+        # P3产品的特殊逻辑：基于访问次数判断
+        stationc_visits = product.visit_count.get("StationC", 0)
+        
+        if stationc_visits == 1:  # 第一次完成StationC处理
+            return "upper"  # 返工到side buffer
+        elif stationc_visits >= 2:  # 第二次及以后完成StationC处理
+            return "main"   # 进入主流程
+        else:
+            return "main"   # 默认主流程
+
+    def _choose_optimal_side_buffer(self, preferred_buffer):
+        """选择最优的side buffer（upper或lower）"""
+        if self.downstream_conveyor is None:
+            return "upper"  # 默认返回upper
+            
+        # 检查优选buffer是否可用
+        if preferred_buffer == "upper" and not self.downstream_conveyor.is_full("upper"):
+            return "upper"
+        elif preferred_buffer == "lower" and not self.downstream_conveyor.is_full("lower"):
+            return "lower"
+        
+        # 优选buffer满，检查另一个
+        if preferred_buffer == "upper":
+            if not self.downstream_conveyor.is_full("lower"):
+                return "lower"
+        else:  # preferred_buffer == "lower"
+            if not self.downstream_conveyor.is_full("upper"):
+                return "upper"
+        
+        # 两个都满的情况下，选择较空的那个（会阻塞直到有空间）
+        if len(self.downstream_conveyor.upper_buffer.items) <= len(self.downstream_conveyor.lower_buffer.items):
+            if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
+                self.report_buffer_full("downstream_conveyor_all_side_buffer")
+            return "upper"
+        else:
+            if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
+                self.report_buffer_full("downstream_conveyor_all_side_buffer")
+            return "lower"
 
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer, wrapped in INTERACTING state."""
@@ -290,8 +285,6 @@ class Station(Device):
             **self.stats,
             "buffer_level": self.get_buffer_level(),
             "buffer_utilization": self.get_buffer_level() / self.buffer_size,
-            "precision_level": self._specific_attributes.get("precision_level", 100.0),
-            "tool_wear_level": self._specific_attributes.get("tool_wear_level", 0.0),
             "can_operate": self.can_operate()
         }
 
@@ -299,7 +292,6 @@ class Station(Device):
         """重置统计数据"""
         self.stats = {
             "products_processed": 0,
-            "products_scrapped": 0,
             "total_processing_time": 0.0,
             "average_processing_time": 0.0
         }

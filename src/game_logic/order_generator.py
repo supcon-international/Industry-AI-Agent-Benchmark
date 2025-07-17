@@ -19,7 +19,7 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient, raw_material: RawMaterial, **kwargs):
+    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, **kwargs):
         self.env = env
         self.mqtt_client = mqtt_client
         self.raw = raw_material
@@ -137,7 +137,8 @@ class OrderGenerator:
     def _publish_order(self, order: NewOrder):
         """Publish the order to MQTT."""
         try:
-            self.mqtt_client.publish(NEW_ORDER_TOPIC, order.model_dump_json())
+            if self.mqtt_client:
+                self.mqtt_client.publish(NEW_ORDER_TOPIC, order.model_dump_json())
             print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
             print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
             print(f"   - Priority: {order.priority.value}")

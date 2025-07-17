@@ -57,7 +57,7 @@ class KPICalculator:
     - Robustness (30%): Diagnosis accuracy + Recovery time
     """
     
-    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient):
+    def __init__(self, env: simpy.Environment, mqtt_client: Optional[MQTTClient] = None):
         self.env = env
         self.mqtt_client = mqtt_client
         self.stats = ProductionStats()
@@ -268,7 +268,8 @@ class KPICalculator:
     def _publish_kpi_update(self, kpi_update: KPIUpdate):
         """Publish KPI update to MQTT."""
         try:
-            self.mqtt_client.publish(KPI_UPDATE_TOPIC, kpi_update)
+            if self.mqtt_client:
+                self.mqtt_client.publish(KPI_UPDATE_TOPIC, kpi_update)
         except Exception as e:
             print(f"[{self.env.now:.2f}] ❌ Failed to publish KPI update: {e}")
 

@@ -165,6 +165,10 @@ class Conveyor(BaseConveyor):
             
             self.publish_status()
             
+            # 更新产品位置信息：这里不使用update_location以避免移动检查，因为传送带流转是自动的
+            actual_product.current_location = self.downstream_station.id
+            actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
+            
             # 最后将产品放入下游（put）
             yield self.downstream_station.buffer.put(actual_product)
             print(f"[{self.env.now:.2f}] Conveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
@@ -382,6 +386,10 @@ class TripleBufferConveyor(BaseConveyor):
                 return
             
             self.publish_status()
+            
+            # 更新产品位置信息：这里不使用update_location以避免移动检查，因为传送带流转是自动的
+            actual_product.current_location = self.downstream_station.id
+            actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
             
             # 将产品放入下游（put）
             yield self.downstream_station.buffer.put(actual_product)

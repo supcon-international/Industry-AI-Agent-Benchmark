@@ -13,7 +13,7 @@ class DeviceStatus(str, Enum):
     INTERACTING = "interacting"  # New status for device-to-device interaction
     CHARGING = "charging"
     MAINTENANCE = "maintenance"
-    FROZEN = "frozen"  # 新增：因诊断错误而冻结的状态
+    SCRAP = "scrap"
 
     WORKING = "working"    # 正常工作中
     BLOCKED = "blocked"    # 被堵塞

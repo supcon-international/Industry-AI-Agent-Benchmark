@@ -26,7 +26,7 @@ class FaultSystem:
     简化的故障系统：冻结设备，过一段时间解冻
     """
     
-    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: MQTTClient, **kwargs):
+    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, **kwargs):
         self.env = env
         self.factory_devices = devices
         self.mqtt_client = mqtt_client
@@ -224,7 +224,8 @@ class FaultSystem:
             message=f"Device {device_id} has fault: {fault.symptom}"
         )
         
-        self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
+        if self.mqtt_client:
+            self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
 
     def _send_recovery_alert(self, device_id: str, last_symptom: str):
         """发送恢复警报"""
@@ -238,7 +239,8 @@ class FaultSystem:
             message=f"Device {device_id} fault has been automatically recovered"
         )
         
-        self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
+        if self.mqtt_client:
+            self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
 
     def force_clear_fault(self, device_id: str) -> bool:
         """强制清除故障（调试用）"""

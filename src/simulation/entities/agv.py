@@ -300,6 +300,12 @@ class AGV(Vehicle):
             # 成功取货后的操作
             if success and product:
                 buffer_desc = f" {buffer_type}" if buffer_type else ""
+                # 检查产品移动是否符合工艺路线
+                if hasattr(product, 'current_location'):
+                    # 将产品标记为在AGV上
+                    product.current_location = f"AGV_{self.id}"
+                    product.add_history(self.env.now, f"Loaded onto {self.id} from {device.id}")
+                
                 self.set_status(DeviceStatus.INTERACTING, f"loading from {device.id}{buffer_desc}")
                 yield self.env.timeout(time_out)
                 yield self.payload.put(product)
@@ -338,6 +344,15 @@ class AGV(Vehicle):
             # Get product from AGV
             product = yield self.payload.get()
             
+            # 检查产品移动是否符合工艺路线
+            if hasattr(product, 'next_move_checker') and hasattr(product, 'update_location'):
+                # 检查移动是否合法
+                can_move, move_reason = product.next_move_checker(self.env.now, device.id)
+                if not can_move:
+                    feedback = f"产品移动违反工艺路线: {move_reason}"
+                    yield self.payload.put(product)  # 放回产品
+                    return False, feedback, product
+            
             # Try to unload to device
             # QualityChecker (Check subclass first)
             if isinstance(device, QualityChecker):
@@ -369,6 +384,12 @@ class AGV(Vehicle):
             
             # 统一处理结果
             if success:
+                # 更新产品位置
+                if hasattr(product, 'update_location'):
+                    location_updated = product.update_location(device.id, self.env.now)
+                    if not location_updated:
+                        print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 产品位置更新失败，但卸载成功")
+                
                 yield self.env.timeout(time_out)
                 self.consume_battery(self.battery_consumption_per_action, "卸载操作")
                 buffer_desc = f" {buffer_type}" if buffer_type else ""

@@ -21,7 +21,7 @@ class Factory:
     """
     The main class that orchestrates the entire factory simulation.
     """
-    def __init__(self, layout_config: Dict, mqtt_client: MQTTClient, no_faults: bool = False):
+    def __init__(self, layout_config: Dict, mqtt_client: Optional[MQTTClient] = None, no_faults: bool = False):
         self.env = simpy.Environment()
         self.layout = layout_config
         self.mqtt_client = mqtt_client
@@ -176,8 +176,8 @@ class Factory:
                 og_config = self.layout['order_generator']
                 self.order_generator = OrderGenerator(
                     env=self.env,
-                    mqtt_client=self.mqtt_client,
                     raw_material=self.raw_material,
+                    mqtt_client=self.mqtt_client,
                     **og_config
                 )
                 print(f"[{self.env.now:.2f}] 📝 Created OrderGenerator with config: {og_config}")
@@ -288,7 +288,8 @@ class Factory:
             )
             
             try:
-                self.mqtt_client.publish(FACTORY_STATUS_TOPIC, factory_status)
+                if self.mqtt_client:
+                    self.mqtt_client.publish(FACTORY_STATUS_TOPIC, factory_status)
                 print(f"[{self.env.now:.2f}] 📊 Published factory status: {factory_status.active_orders} active orders, {factory_status.active_faults} faults")
             except Exception as e:
                 print(f"[{self.env.now:.2f}] ❌ Failed to publish factory status: {e}")
@@ -317,7 +318,8 @@ class Factory:
                     
                     try:
                         import json
-                        self.mqtt_client.publish(f"factory/alerts/{device_id}", json.dumps(fault_alert))
+                        if self.mqtt_client:
+                            self.mqtt_client.publish(f"factory/alerts/{device_id}", json.dumps(fault_alert))
                         print(f"[{self.env.now:.2f}] 🚨 Enhanced fault alert published for {device_id}: {fault.symptom}")
                     except Exception as e:
                         print(f"[{self.env.now:.2f}] ❌ Failed to publish fault alert: {e}")
