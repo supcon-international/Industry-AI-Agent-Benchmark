@@ -47,6 +47,10 @@ class Factory:
         
         # Initialize all_devices dictionary first
         self.all_devices = {}
+
+        # Game logic components will be initialized dynamically
+        self.order_generator: Optional[OrderGenerator] = None
+        self.fault_system: Optional[FaultSystem] = None
         
         # Create devices first
         self._create_devices()
@@ -61,18 +65,17 @@ class Factory:
 
         if self.raw_material is not None:
             self.all_devices[self.raw_material.id] = self.raw_material
-            self.order_generator = OrderGenerator(self.env, self.mqtt_client, self.raw_material)
-        else:
-            raise ValueError("RawMaterial device not found in configuration")
+        
+        # Create game logic systems from config
+        self._create_game_logic_systems()
 
-        # Game logic components (fault system needs device references)
-        # Conditionally initialize FaultSystem
-        if not self.no_faults_mode:
-            self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client)
-            print("🔧 Fault System Initialized.")
-        else:
-            self.fault_system = None # Explicitly set to None if not enabled
-            print("🚫 Fault System Disabled (no-faults mode).")
+        # If order generator is not created, some features might not work.
+        if not self.order_generator:
+            print("⚠️ Order Generator not configured in layout. Order-related features will be disabled.")
+
+        # If fault system is not created, fault features will be disabled.
+        if not self.fault_system:
+            print("⚠️ Fault System not configured in layout or is disabled. No faults will be generated.")
         
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
         
@@ -126,6 +129,7 @@ class Factory:
                 "env": self.env,
                 "id": conveyor_id,
                 "position": conveyor_cfg['position'],
+                "transfer_time": conveyor_cfg['transfer_time'],
                 "mqtt_client": self.mqtt_client
             }
             if conveyor_id == 'Conveyor_CQ':
@@ -165,8 +169,37 @@ class Factory:
             
             print(f"[{self.env.now:.2f}] 🏪 Created Warehouse: {warehouse_cfg['id']}")
 
+    def _create_game_logic_systems(self):
+        """Dynamically create game logic systems like OrderGenerator and FaultSystem from config."""
+        if 'order_generator' in self.layout:
+            if self.raw_material:
+                og_config = self.layout['order_generator']
+                self.order_generator = OrderGenerator(
+                    env=self.env,
+                    mqtt_client=self.mqtt_client,
+                    raw_material=self.raw_material,
+                    **og_config
+                )
+                print(f"[{self.env.now:.2f}] 📝 Created OrderGenerator with config: {og_config}")
+            else:
+                print("⚠️ Cannot create OrderGenerator: RawMaterial device not found.")
+
+        if 'fault_system' in self.layout and not self.no_faults_mode:
+            fs_config = self.layout['fault_system']
+            self.fault_system = FaultSystem(
+                env=self.env,
+                devices=self.all_devices,
+                mqtt_client=self.mqtt_client,
+                **fs_config
+            )
+            print(f"[{self.env.now:.2f}] 🔧 Created FaultSystem with config: {fs_config}")
+        elif self.no_faults_mode:
+            print("🚫 Fault System Disabled (no-faults mode).")
+
     def _setup_event_handlers(self):
         """Setup event handlers for order processing and fault handling."""
+        if not self.order_generator:
+            return
         # Register callback for new orders
         def on_new_order(order):
             self.kpi_calculator.register_new_order(order)

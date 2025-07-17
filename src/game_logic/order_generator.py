@@ -19,33 +19,33 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient, raw_material: RawMaterial):
+    def __init__(self, env: simpy.Environment, mqtt_client: MQTTClient, raw_material: RawMaterial, **kwargs):
         self.env = env
         self.mqtt_client = mqtt_client
         self.raw = raw_material
-        # Order generation parameters from PRD
-        self.generation_interval_range = (10, 50)  # seconds
-        self.quantity_weights = {1: 40, 2: 30, 3: 20, 4: 7, 5: 3}
-        self.product_distribution = {'P1': 60, 'P2': 30, 'P3': 10}
-        self.priority_distribution = {
+        # Order generation parameters from kwargs
+        self.generation_interval_range = kwargs.get('generation_interval_range', (10, 50))
+        self.quantity_weights = kwargs.get('quantity_weights', {1: 40, 2: 30, 3: 20, 4: 7, 5: 3})
+        self.product_distribution = kwargs.get('product_distribution', {'P1': 60, 'P2': 30, 'P3': 10})
+        self.priority_distribution = kwargs.get('priority_distribution', {
             OrderPriority.LOW: 70,
             OrderPriority.MEDIUM: 25, 
             OrderPriority.HIGH: 5
-        }
+        })
         
         # Theoretical production times for deadline calculation (in seconds)
-        self.theoretical_production_times = {
-            'P1': 30 + 45 + 20 + 15 + 50,  # A+B+C+Q+Transport = ~160s
-            'P2': 40 + 60 + 30 + 20 + 50,  # A+B+C+Q+Transport = ~200s 
-            'P3': 35 + 50 + 20 + 30 + 20 + 25 + 20 + 50,  # A+B+A+C+Q+Transport = ~250s
-        }
+        self.theoretical_production_times = kwargs.get('theoretical_production_times', {
+            'P1': 160,
+            'P2': 200,
+            'P3': 250
+        })
         
         # Priority multipliers for deadline calculation
-        self.priority_multipliers = {
+        self.priority_multipliers = kwargs.get('priority_multipliers', {
             OrderPriority.LOW: 3.0,
             OrderPriority.MEDIUM: 2.0,
             OrderPriority.HIGH: 1.5
-        }
+        })
         
         # Start the order generation process
         self.env.process(self.run())

@@ -32,9 +32,9 @@ stations:
     position: [15, 20]
     buffer_size: 3
     processing_times:  # 产品类型: [最小时间, 最大时间] (秒)
-      P1: [30, 45]
-      P2: [40, 60]
-      P3: [35, 50]
+      P1: [5, 5] #[30, 45]
+      P2: [5, 5] #[40, 60]
+      P3: [5, 5] #[35, 50]
     # precision_level: 98.5  # 基础精度水平 (%)
     # maintenance_cost: 150  # 维修基础成本
     
@@ -43,9 +43,9 @@ stations:
     position: [35, 20]
     buffer_size: 3
     processing_times:
-      P1: [45, 60]
-      P2: [60, 80]
-      P3: [50, 70]
+      P1: [5, 5] #[45, 60]
+      P2: [5, 5] #[60, 80]
+      P3: [5, 5] #[50, 70]
     # precision_level: 97.0
     # maintenance_cost: 200
     
@@ -54,9 +54,9 @@ stations:
     position: [55, 20]
     buffer_size: 3
     processing_times:
-      P1: [20, 30]
-      P2: [30, 40]
-      P3: [25, 35]
+      P1: [5, 5] #[20, 30]
+      P2: [5, 5] #[30, 40]
+      P3: [5, 5] #[25, 35]
     # precision_level: 99.0
     # maintenance_cost: 120
     
@@ -65,9 +65,9 @@ stations:
     position: [75, 20]
     buffer_size: 2
     processing_times:
-      P1: [15, 25]
-      P2: [20, 30]
-      P3: [20, 30]
+      P1: [5, 5] #[15, 25]
+      P2: [5, 5] #[20, 30]
+      P3: [5, 5] #[20, 30]
     output_buffer_capacity: 3
     # precision_level: 99.8
     # maintenance_cost: 180
@@ -121,14 +121,17 @@ agvs:
 conveyors:
   - id: "Conveyor_AB"
     position: [25, 20]
+    transfer_time: 5.0
     capacity: 3
 
   - id: "Conveyor_BC"
     position: [45, 20]
+    transfer_time: 5.0
     capacity: 3
 
   - id: "Conveyor_CQ"
     position: [65, 20]
+    transfer_time: 5.0
     main_capacity: 2
     upper_capacity: 2
     lower_capacity: 2
@@ -141,63 +144,36 @@ warehouses:
   - id: "Warehouse"
     position: [95, 20]
 
-# 生产参数
-production:
-  # 订单生成参数
-  order_generation:
-    interval_min: 30  # 最小间隔 (秒)
-    interval_max: 60  # 最大间隔 (秒)
-    
-    # 数量分布 (概率权重)
-    quantity_distribution:
-      1: 0.40  # 40%
-      2: 0.30  # 30%
-      3: 0.20  # 20%
-      4: 0.07  # 7%
-      5: 0.03  # 3%
-    
-    # 产品类型分布
-    product_distribution:
-      P1: 0.60  # 60%
-      P2: 0.30  # 30%
-      P3: 0.10  # 10%
-    
-    # 优先级分布
-    priority_distribution:
-      low: 0.70    # 70%
-      medium: 0.25 # 25%
-      high: 0.05   # 5%
-    
-    # 截止日期计算倍数
-    deadline_multipliers:
-      low: 3.0     # 3倍预计完成时间
-      medium: 2.0  # 2倍预计完成时间
-      high: 1.5    # 1.5倍预计完成时间
-
-  # 材料成本 (每件)
-  material_costs:
-    P1: 25.0
-    P2: 40.0
-    P3: 60.0
-  
-  # 能源成本
-  energy:
-    base_cost_per_kwh: 0.8  # 基础电价
-    peak_hour_multiplier: 1.5  # 高峰时段倍数
-    peak_hours: [9, 10, 11, 17, 18, 19, 20, 21]  # 高峰时段
-    
-  # 报废成本
-  defect_costs:
-    P1: 15.0
-    P2: 25.0
-    P3: 35.0
+# 订单生成器配置
+order_generator:
+  generation_interval_range: [30, 60]  # 最小/最大间隔 (秒)
+  quantity_weights:
+    1: 0.40
+    2: 0.30
+    3: 0.20
+    4: 0.07
+    5: 0.03
+  product_distribution:
+    P1: 0.60
+    P2: 0.30
+    P3: 0.10
+  priority_distribution:
+    low: 0.70
+    medium: 0.25
+    high: 0.05
+  deadline_multipliers:
+    low: 3.0
+    medium: 2.0
+    high: 1.5
+  theoretical_production_times:
+    P1: 160
+    P2: 200
+    P3: 250
 
 # 故障系统参数
 fault_system:
-  injection_interval: [300, 900]  # 故障注入间隔 (5-15分钟)
+  fault_injection_interval: [120, 180]  # 故障注入间隔 (2-3分钟)
   auto_recovery_time: [600, 1800]  # 自动恢复时间 (10-30分钟)
-  
-  # 设备关系映射 (用于连锁反应)
   device_relationships:
     StationA: ["StationB", "AGV_1"]
     StationB: ["StationA", "StationC", "AGV_1", "AGV_2"]

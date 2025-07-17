@@ -26,9 +26,9 @@ class FaultSystem:
     简化的故障系统：冻结设备，过一段时间解冻
     """
     
-    def __init__(self, env: simpy.Environment, factory_devices: Dict, mqtt_client: MQTTClient):
+    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: MQTTClient, **kwargs):
         self.env = env
-        self.factory_devices = factory_devices
+        self.factory_devices = devices
         self.mqtt_client = mqtt_client
         self.active_faults: Dict[str, 'SimpleFault'] = {}
         self.fault_processes: Dict[str, simpy.Process] = {}
@@ -53,7 +53,7 @@ class FaultSystem:
         }
         
         # 故障注入参数
-        self.fault_injection_interval = (120, 300)  # 2-6分钟间隔
+        self.fault_injection_interval = kwargs.get('fault_injection_interval', (120, 300))
         
         # 开始故障注入过程
         self.env.process(self.run_fault_injection())

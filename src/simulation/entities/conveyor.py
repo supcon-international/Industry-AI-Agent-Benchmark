@@ -13,13 +13,13 @@ class Conveyor(BaseConveyor):
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, id, capacity, position: Tuple[int, int], mqtt_client=None):
+    def __init__(self, env, id, capacity, position: Tuple[int, int],transfer_time: float =5.0, mqtt_client=None):
         super().__init__(env, id, position, mqtt_client)
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
         self.action = None  # 保留但不使用，兼容 fault system 接口
-        self.transfer_time = 5.0 # 模拟搬运时间
+        self.transfer_time = transfer_time # 模拟搬运时间
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
         
@@ -204,14 +204,14 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], mqtt_client=None):
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None):
         super().__init__(env, id, position, mqtt_client)
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
         self.downstream_station = None  # QualityCheck
         self.action = None  # 保留但不使用，兼容 fault system 接口
-        self.transfer_time = 5.0 # 模拟搬运时间
+        self.transfer_time = transfer_time # 模拟搬运时间
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
         
