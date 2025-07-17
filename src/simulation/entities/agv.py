@@ -580,4 +580,4 @@ class AGV(Vehicle):
             message=message
         )
         # Assuming model_dump_json() is the correct method for pydantic v2
-        self.mqtt_client.publish(get_agv_status_topic(self.id), status_payload.model_dump_json(), retain=True)
+        self.mqtt_client.publish(get_agv_status_topic(self.id), status_payload.model_dump_json(), retain=False)

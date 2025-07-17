@@ -89,7 +89,7 @@ class Station(Device):
             output_buffer=[]  # 普通工站没有 output_buffer
         )
         topic = get_station_status_topic(self.id)
-        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=True)
+        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def run(self):
         """The main operational loop for the station."""

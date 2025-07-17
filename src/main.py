@@ -21,6 +21,7 @@ from src.simulation.factory import Factory
 from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from src.agent_interface.command_handler import CommandHandler
+from src.user_input import menu_input_thread
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, LOG_LEVEL
 from src.game_logic.fault_system import FaultType
 
@@ -136,90 +137,6 @@ def signal_handler(signum, frame):
     logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     sys.exit(0)
 
-def menu_input_thread(mqtt_client, factory):
-    import json
-    from config.topics import AGENT_COMMANDS_TOPIC
-    while True:
-        print("\n请选择操作类型：")
-        print("1. 移动AGV")
-        print("2. 装载")
-        print("3. 卸载")
-        print("4. 充电")
-        print("5. 注入故障")
-        print("6. 退出")
-        op = input("> ").strip()
-        if op == "1":
-            agv_id = input("请输入AGV编号: ").strip()
-            target_point = input("请输入目标点: ").strip()
-            agv_id = "AGV_" + agv_id
-            target_point = "P" + target_point
-            cmd = {
-                "action": "move",
-                "target": agv_id,
-                "params": {"target_point": target_point}
-            }
-        elif op == "2":
-            agv_id = input("请输入AGV编号: ").strip()
-            device_id = input("请输入装载设备编号: ").strip()
-            agv_id = "AGV_" + agv_id
-            buffer_type = input("请输入buffer类型: ").strip()
-            product_id = input("请输入产品编号（不必须）: ").strip()
-            cmd = {
-                "action": "load",
-                "target": agv_id,
-                "params": {"device_id": device_id, "buffer_type": buffer_type, "product_id": product_id}
-            }
-        elif op == "3":
-            agv_id = input("请输入AGV编号: ").strip()
-            agv_id = "AGV_" + agv_id
-            device_id = input("请输入卸载设备编号: ").strip()
-            buffer_type = input("请输入buffer类型: ").strip()
-            cmd = {
-                "action": "unload",
-                "target": agv_id,
-                "params": {"device_id": device_id, "buffer_type": buffer_type}
-            }
-        elif op == "4":
-            agv_id = input("请输入AGV编号: ").strip()
-            agv_id = "AGV_" + agv_id
-            target_level = input("请输入目标电量(如80): ").strip()
-            try:
-                target_level = float(target_level)
-            except Exception:
-                print("目标电量需为数字！")
-                continue
-            cmd = {
-                "action": "charge",
-                "target": agv_id,
-                "params": {"target_level": target_level}
-            }
-        elif op == "5":
-            device_id = input("请输入设备编号: ").strip()
-            fault_type = input("请输入故障类型 1:AGV故障 2:工站故障 3:传送带故障: ").strip()
-            fault_duration = input("请输入故障持续时间: ").strip()
-            try:
-                fault_duration = float(fault_duration)
-                if fault_type == "1":
-                    fault_type = FaultType.AGV_FAULT
-                elif fault_type == "2":
-                    fault_type = FaultType.STATION_FAULT
-                elif fault_type == "3":
-                    fault_type = FaultType.CONVEYOR_FAULT
-            except Exception:
-                print("故障持续时间需为数字！")
-                continue
-            factory.fault_system._inject_fault_now(device_id, fault_type, fault_duration)
-            print(f"已注入故障: {device_id} {fault_type} {fault_duration}")
-            continue
-        elif op == "6":
-            print("退出菜单输入线程。")
-            break
-        else:
-            print("无效选择，请重试。")
-            continue
-        # Publish command to MQTT
-        mqtt_client.publish(AGENT_COMMANDS_TOPIC, json.dumps(cmd))
-        print(f"已发送命令: {cmd}")
 
 def main(argv=None):
     """Main function."""
@@ -229,6 +146,11 @@ def main(argv=None):
         "--no-faults",
         action="store_true", # This makes it a boolean flag
         help="Run the simulation without the fault system enabled."
+    )
+    parser.add_argument(
+        "--menu",
+        action="store_true",
+        help="Enable the interactive menu for manual control."
     )
     args = parser.parse_args(argv)
 
@@ -241,9 +163,12 @@ def main(argv=None):
     
     try:
         simulation.initialize(no_faults=args.no_faults) # Pass the argument to initialize
-        # Start menu input thread after MQTT client is ready
-        import threading
-        threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory), daemon=True).start()
+        # Start menu input thread if requested
+        if args.menu:
+            import threading
+            threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory), daemon=True).start()
+            logger.info("Interactive menu enabled. Type commands in the console.")
+
         simulation.run()  # Run indefinitely
     except Exception as e:
         logger.error(f"❌ Failed to start simulation: {e}")

@@ -283,3 +283,5 @@ uv run test/run_tests.py
 # 7.17
 1. Add last_fault: Dict[str, str] = Field(..., description="Last fault. Should include fault_type, duration, start_time, processed_time, product_id") maybe product and processing related text only for station
 2. Add processing_time or incomming_time for conveyor to resume processing dynamically
+3. AGV action filter based on current_point and target_device
+4. load / unload check AGV and target_device can_operate

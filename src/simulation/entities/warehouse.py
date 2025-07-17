@@ -35,7 +35,7 @@ class BaseWarehouse(Device):
             buffer=[p.id for p in self.buffer.items],
             stats=self.stats
         )
-        self.mqtt_client.publish(get_warehouse_status_topic(self.id), status_data.model_dump_json(), retain=True)
+        self.mqtt_client.publish(get_warehouse_status_topic(self.id), status_data.model_dump_json(), retain=False)
 
     def get_buffer_level(self) -> int:
         """Return the current number of items in the buffer."""
