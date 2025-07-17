@@ -16,12 +16,15 @@ class BaseWarehouse(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        buffer_size: int = 1000,  # Default large buffer for warehouses
-        mqtt_client=None
+        buffer_size: int = 1000,
+        mqtt_client=None,
+        interacting_points: list = [],
+        **kwargs # Absorb other config values
     ):
         super().__init__(env, id, position, device_type="warehouse", mqtt_client=mqtt_client)
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.buffer_size = buffer_size
+        self.interacting_points = interacting_points
         self.stats = {}  # To be overridden by subclasses
 
     def publish_status(self, message: str = "Warehouse is ready"):
@@ -52,18 +55,16 @@ class RawMaterial(BaseWarehouse):
     def __init__(
         self,
         env: simpy.Environment,
-        id: str = "RawMaterial",
-        position: Tuple[int, int] = (5, 20),
-        buffer_size: int = 1000,  # large enough buffer
-        mqtt_client=None
+        mqtt_client=None,
+        **config
     ):
-        super().__init__(env, id, position, buffer_size, mqtt_client)
+        super().__init__(env=env, mqtt_client=mqtt_client, **config)
         self.device_type = "raw_material"  # Override device type
         self.stats = {
             "total_materials_supplied": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
         }
-        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready, buffer size: {buffer_size}")
+        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready, buffer size: {self.buffer_size}")
         self.publish_status("Raw material warehouse is ready")
 
     def create_raw_material(self, product_type: str, order_id: str) -> Product:
@@ -86,11 +87,10 @@ class Warehouse(BaseWarehouse):
     def __init__(
         self,
         env: simpy.Environment,
-        id: str = "Warehouse",
-        position: Tuple[int, int] = (85, 20),
-        mqtt_client=None
+        mqtt_client=None,
+        **config
     ):
-        super().__init__(env, id, position, buffer_size=1000, mqtt_client=mqtt_client)  # Use default buffer_size
+        super().__init__(env=env, mqtt_client=mqtt_client, **config)
         self.stats = {
             "total_products_received": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0},

@@ -13,8 +13,8 @@ class Conveyor(BaseConveyor):
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, id, capacity, position: Tuple[int, int],transfer_time: float =5.0, mqtt_client=None):
-        super().__init__(env, id, position, mqtt_client)
+    def __init__(self, env, id, capacity, position: Tuple[int, int], interacting_points: list = [], transfer_time: float =5.0, mqtt_client=None):
+        super().__init__(env, id, position, transfer_time, mqtt_client, interacting_points)
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
         self.downstream_station = None  # 下游工站引用
@@ -208,8 +208,8 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None):
-        super().__init__(env, id, position, mqtt_client)
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None, interacting_points: list = []):
+        super().__init__(env, id, position, transfer_time, mqtt_client, interacting_points)
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)

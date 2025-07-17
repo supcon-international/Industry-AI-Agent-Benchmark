@@ -102,8 +102,8 @@ class FaultSystem:
             agv_devices = [dev_id for dev_id in self.factory_devices.keys() if "AGV" in dev_id]
             return random.choice(agv_devices) if agv_devices else "AGV_1"
         elif fault_type == FaultType.CONVEYOR_FAULT:
-            # 传送带故障
-            conveyor_devices = [dev_id for dev_id in self.factory_devices.keys() if "Conveyor" in dev_id]
+            # 传送带故障 except Conveyor_CQ
+            conveyor_devices = [dev_id for dev_id in self.factory_devices.keys() if "Conveyor" in dev_id and "CQ" not in dev_id]
             return random.choice(conveyor_devices) if conveyor_devices else "Conveyor_AB"
         else:
             # 工站故障

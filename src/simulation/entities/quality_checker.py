@@ -36,7 +36,8 @@ class QualityChecker(Station):
         pass_threshold: float = 80.0,  # 合格阈值
         scrap_threshold: float = 60.0,  # 报废阈值
         output_buffer_capacity: int = 5,  # 新增，output buffer容量
-        mqtt_client=None
+        mqtt_client=None,
+        interacting_points: list = []
     ):
         # 默认检测时间
         if processing_times is None:
@@ -53,7 +54,7 @@ class QualityChecker(Station):
         self.output_buffer_capacity = output_buffer_capacity
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
         
-        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client)
+        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client, interacting_points=interacting_points)
         
         # 简单统计
         self.stats = {

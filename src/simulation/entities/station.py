@@ -24,13 +24,6 @@ class Station(Device):
         downstream_conveyor (Conveyor): The conveyor downstream from this station
     """
     
-    # 默认工艺路线定义 - 产品在各工站间的流转顺序
-    DEFAULT_PROCESS_ROUTE = {
-        "P1": ["StationA", "StationB", "StationC", "QualityCheck"],
-        "P2": ["StationA", "StationB", "StationC", "QualityCheck"],  
-        "P3": ["StationA", "StationB", "StationC", "StationB", "StationC", "QualityCheck"]
-    }
-    
     def __init__(
         self,
         env: simpy.Environment,
@@ -39,10 +32,11 @@ class Station(Device):
         buffer_size: int = 1,  # 默认容量为1
         processing_times: Dict[str, Tuple[int, int]] = {},
         downstream_conveyor=None,
-        mqtt_client=None
+        mqtt_client=None,
+        interacting_points: list = []
     ):
         # TODO: Add a Processing Area(simpy.Store) to hold products that are being processed
-        super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client)
+        super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client, interacting_points=interacting_points)
         self.buffer_size = buffer_size
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.processing_times = processing_times

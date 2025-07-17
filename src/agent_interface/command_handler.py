@@ -130,8 +130,12 @@ class CommandHandler:
         
         logger.info(f"Moving {agv_id} from {agv.current_point} to {target_point}")
 
-        # Schedule the movement in the simulation
-        self.factory.env.process(agv.move_to(target_point))
+        def move_process():
+            success, message = yield from agv.move_to(target_point)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=message).model_dump_json())
+            return success, message
+        
+        self.factory.env.process(move_process())
 
     def _handle_load_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV load commands.
@@ -158,7 +162,13 @@ class CommandHandler:
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=f"Device {device_id} not found in factory").model_dump_json())
             return
         logger.info(f"AGV {agv_id} loading {product_id} from {device_id} with buffer_type {buffer_type}")
-        self.factory.env.process(agv.load_from(device, buffer_type, product_id))
+        
+        def load_process():
+            success, message, _ = yield from agv.load_from(device, buffer_type, product_id)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=message).model_dump_json())
+            return success, message
+        
+        self.factory.env.process(load_process())
 
     def _handle_unload_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV unload commands.
@@ -184,7 +194,13 @@ class CommandHandler:
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=msg).model_dump_json())
             return
         logger.info(f"AGV {agv_id} unloading {device_id} with buffer_type {buffer_type}")
-        self.factory.env.process(agv.unload_to(device, buffer_type))
+        
+        def unload_process():
+            success, message, _ = yield from agv.unload_to(device, buffer_type)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=message).model_dump_json())
+            return success, message
+        
+        self.factory.env.process(unload_process())
 
     def _handle_charge_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV charge commands.
@@ -202,7 +218,13 @@ class CommandHandler:
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=msg).model_dump_json())
             return
         agv = self.factory.agvs[agv_id]
-        self.factory.env.process(agv.voluntary_charge(target_level))
+        
+        def charge_process():
+            success, message = yield from agv.voluntary_charge(target_level)
+            self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now, command_id=command_id, response=message).model_dump_json())
+            return success, message
+        
+        self.factory.env.process(charge_process())
 
     def _handle_agv_action_sequence(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """支持agent一次下发一串AGV动作，仿真端按序执行并反馈。params: {actions: [{type, args}]}
@@ -236,9 +258,7 @@ class CommandHandler:
                     if 'target_point' in args:
                         # 使用路径点名称（推荐方式）
                         target_point = args['target_point']
-                        yield from agv.move_to(target_point)
-                        feedback = f"AGV已移动到路径点{target_point}"
-                        success = True
+                        success, feedback = yield from agv.move_to(target_point)
                     else:
                         feedback = f"move命令缺少target_point参数"
                         success = False

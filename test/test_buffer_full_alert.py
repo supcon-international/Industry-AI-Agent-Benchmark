@@ -69,7 +69,7 @@ def test_buffer_full_alert():
     # TripleBufferConveyor
     conveyor_1 = Conveyor(env, id="Conveyor_AB", capacity=3, position=(2, 0), mqtt_client=mqtt_client)
     conveyor_2 = Conveyor(env, id="Conveyor_BC", capacity=3, position=(2, 0), mqtt_client=mqtt_client)
-    conveyor_3 = TripleBufferConveyor(env, id="Conveyor_QC", main_capacity=2, upper_capacity=1, lower_capacity=1, position=(2, 0), mqtt_client=mqtt_client)
+    conveyor_3 = TripleBufferConveyor(env, id="Conveyor_CQ", main_capacity=2, upper_capacity=1, lower_capacity=1, position=(2, 0), mqtt_client=mqtt_client)
     # conveyor.set_downstream_station = lambda x: None  # 不自动流转
     station_a.downstream_conveyor = conveyor_1
     station_b.downstream_conveyor = conveyor_2

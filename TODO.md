@@ -273,15 +273,15 @@ uv run test/run_tests.py
 
 # 7.5
 ✅ 1. 产线设计，同步加工3个产品，实现不同产品的逻辑产线
-2. P3产品的出料设置2队列进行存放storage，若满就报故障，将产线停掉
+✅ 2. P3产品的出料设置2队列进行存放storage，若满就报故障，将产线停掉
 
 
 # 7.16
-1. simpify update_location and process_at_station logic, reduce code complexity and redundancy
-2. simplify quality checker for rework and scrap(based on quality score)
+✅ 1. simpify update_location and process_at_station logic, reduce code complexity and redundancy
+✅ 2. simplify quality checker for rework and scrap(based on quality score)
 
 # 7.17
 1. Add last_fault: Dict[str, str] = Field(..., description="Last fault. Should include fault_type, duration, start_time, processed_time, product_id") maybe product and processing related text only for station
 2. Add processing_time or incomming_time for conveyor to resume processing dynamically
-3. AGV action filter based on current_point and target_device
-4. load / unload check AGV and target_device can_operate
+✅ 3. AGV action filter based on current_point and target_device
+✅ 4. load / unload check AGV and target_device can_operate

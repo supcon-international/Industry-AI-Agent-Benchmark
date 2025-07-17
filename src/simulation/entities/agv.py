@@ -124,53 +124,53 @@ class AGV(Vehicle):
         Move to a specific path point using AGV's independent path system.
         
         Args:
-            target_point: Path point name (e.g., "LP1", "UP3")
+            target_point: Path point name (e.g., "P1", "P2")
+            
+        Returns:
+            (success, feedback_message)
         """
         # Wrap the core logic in a process to make it interruptible
         self.action = self.env.process(self._move_to_process(target_point))
         try:
-            yield self.action
+            result = yield self.action
+            return result if result else (True, f"成功移动到{target_point}")
         except simpy.Interrupt as e:
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: Movement to {target_point} interrupted: {e.cause}")
-            # The fault system handles the status change.
-            # We just need to stop the current action.
+            msg = f"Movement to {target_point} interrupted: {e.cause}"
+            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            return False, msg
             
     def _move_to_process(self, target_point: str):
         """The actual process logic for move_to, to be wrapped by self.action."""
         try:
             if not self.can_operate():
-                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法移动，设备不可用"
-                print(msg)
-                self.publish_status(msg)
-                return
+                msg = f"Can not move. AGV {self.id} is not available."
+                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+                return False, msg
                 
             if target_point not in self.path_points:
-                msg = f"[{self.env.now:.2f}] ❌ {self.id}: 未知路径点 {target_point}"
-                print(msg)
-                self.publish_status(msg)
-                return
+                msg = f"Unknown path point {target_point}"
+                logger.error(f"[{self.env.now:.2f}] ❌ {self.id}: {msg}")
+                return False, msg
                 
             self.target_point = target_point
     
             # use path timing to get travel time
             travel_time = get_travel_time(self.current_point, target_point)
             if travel_time < 0:
-                msg = f"[{self.env.now:.2f}] ❌ {self.id}: 无法找到从 {self.current_point} 到 {target_point} 的路径"
-                print(msg)
-                self.publish_status(msg)
-                return
+                msg = f"Can not find path from {self.current_point} to {target_point}"
+                print(f"[{self.env.now:.2f}] ❌ {self.id}: {msg}")
+                return False, msg
                 
             # check if battery is enough
             if not self.can_complete_task(travel_time, 1):
-                msg = f"[{self.env.now:.2f}] 🔋 {self.id}: 电量不足，无法移动到 {target_point}"
-                print(msg)
-                self.publish_status(msg)
+                msg = f"Battery level is too low to move to {target_point}"
+                print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
                 self.stats["tasks_interrupted"] += 1
                 yield self.env.process(self.emergency_charge())
-                return
+                return False, f"{msg}, emergency charging"
                 
             self.set_status(DeviceStatus.MOVING, f"moving to {target_point} from {self.current_point}, estimated time: {travel_time:.1f}s")
-            print(f"[{self.env.now:.2f}] 🚛 {self.id}: 移动到路径点 {target_point} {self.path_points[target_point]} (预计时间: {travel_time:.1f}s)")
+            print(f"[{self.env.now:.2f}] 🚛 {self.id}: move to path point {target_point} {self.path_points[target_point]} (estimated time: {travel_time:.1f}s)")
             
             # wait for move to complete
             self.estimated_time = travel_time
@@ -195,9 +195,10 @@ class AGV(Vehicle):
             
             # Before setting to IDLE, check for pending faults
             if self._check_and_trigger_pending_fault():
-                return # Fault injected, do not become idle
+                return True, f"Arrived at {target_point}, but triggered fault"
 
             self.set_status(DeviceStatus.IDLE, f"arrived at {target_point}")
+            return True, f"Successfully arrived at path point {target_point}, remaining battery: {self.battery_level:.1f}%"
         
         finally:
             self.action = None
@@ -205,9 +206,19 @@ class AGV(Vehicle):
     def load_from(self, device:Device, buffer_type=None, product_id=None, action_time_factor=1) :
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         """
+        if not self.can_operate():
+                msg = f"Can not load. AGV {self.id} is not available."
+                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+                return False, msg, None
+        
+        if self.current_point not in device.interacting_points:
+            msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot load. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
+            logger.error(msg)
+            return False, msg, None
+        
         # check battery level
         if self.is_battery_low():
-            return False, f"{self.id}电量过低({self.battery_level:.1f}%)，无法执行取货操作", None
+            return False, f"{self.id} battery level is too low ({self.battery_level:.1f}%), can not load", None
             
         product = None
         feedback = ""
@@ -323,6 +334,17 @@ class AGV(Vehicle):
 
     def unload_to(self, device, buffer_type=None, action_time_factor=1):
         """AGV将产品卸载到指定设备/缓冲区，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)"""
+        # check if agv can operate
+        if not self.can_operate():
+                msg = f"Can not unload. AGV {self.id} is not available."
+                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+                return False, msg, None
+        
+        if self.current_point not in device.interacting_points:
+            msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot unload. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
+            logger.error(msg)
+            return False, msg, None
+
         # 检查电量
         if self.is_battery_low():
             return False, f"{self.id}电量过低({self.battery_level:.1f}%)，无法执行卸载操作", None
@@ -411,14 +433,16 @@ class AGV(Vehicle):
         return success, feedback, product
 
     def charge_battery(self, target_level: float = 100.0, message: Optional[str] = None):
-        """Charge battery to target level."""
+        """Charge battery to target level. Returns (success, feedback_message)"""
         if self.status == DeviceStatus.CHARGING:
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: already charging")
-            return
+            msg = f"already charging"
+            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            return True, msg
             
         if self.battery_level >= target_level:
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: battery level is enough ({self.battery_level:.1f}%)")
-            return
+            msg = f"battery level is enough ({self.battery_level:.1f}%)"
+            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            return True, msg
             
         # move to charging point
         if self.current_point != self.charging_point:
@@ -444,9 +468,10 @@ class AGV(Vehicle):
 
         # Before setting to IDLE, check for pending faults
         if self._check_and_trigger_pending_fault():
-            return # Fault injected, do not become idle
+            return True, f"充电完成到 {target_level:.1f}%，但触发了故障"
 
         self.set_status(DeviceStatus.IDLE, f"charged to {target_level:.1f}%")
+        return True, f"充电完成，当前电量: {self.battery_level:.1f}%"
 
     def emergency_charge(self):
         """Emergency charging when battery is critically low."""
@@ -458,16 +483,19 @@ class AGV(Vehicle):
         yield self.env.process(self.charge_battery(50.0, "emergency charging to 50%"))
 
     def voluntary_charge(self, target_level: float = 80.0):
-        """Voluntary charging to maintain good battery level."""
+        """Voluntary charging to maintain good battery level. Returns (success, feedback_message)"""
         target_level = float(target_level)
         print(f"[{self.env.now:.2f}] 🔋 {self.id}: voluntary charging")
         self.stats["voluntary_charge_count"] += 1
         
         self.action = self.env.process(self.charge_battery(target_level, f"voluntary charging to {target_level:.1f}%"))
         try:
-            yield self.action
+            result = yield self.action
+            return result if result else (True, f"充电完成到 {target_level:.1f}%")
         except simpy.Interrupt as e:
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: Charging interrupted: {e.cause}")
+            msg = f"Charging interrupted: {e.cause}"
+            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            return False, msg
         finally:
             self.action = None
 

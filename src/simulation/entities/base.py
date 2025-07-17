@@ -13,7 +13,7 @@ class Device:
     Base class for all simulated devices in the factory.
     Simplified for a basic fault model.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None, interacting_points: list = None):
         if not isinstance(env, simpy.Environment):
             raise ValueError("env must be a valid simpy.Environment object.")
         
@@ -22,6 +22,7 @@ class Device:
         self.device_type = device_type
         self.position = position
         self.mqtt_client = mqtt_client
+        self.interacting_points = interacting_points if interacting_points is not None else []
         
         # 设备状态和故障相关属性
         self.status = DeviceStatus.IDLE
@@ -131,8 +132,8 @@ class BaseConveyor(Device, ABC):
     """
     Abstract base class for different types of conveyors.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], mqtt_client=None):
-        super().__init__(env, id, position, "conveyor", mqtt_client)
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], transfer_time: float, mqtt_client=None, interacting_points: list = None):
+        super().__init__(env, id, position, "conveyor", mqtt_client, interacting_points)
 
     @abstractmethod
     def push(self, product):
