@@ -34,7 +34,7 @@ STATION_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
 CONVEYOR_STATUS_TOPIC_PREFIX = "NLDF/line1/conveyor"
 AGV_STATUS_TOPIC_PREFIX = "NLDF/line1/agv"
 WAREHOUSE_STATUS_TOPIC_PREFIX = "NLDF/line1/warehouse"
-DEVICE_ALERT_TOPIC_PREFIX = "NLDF/line1/alerts"
+DEVICE_ALERT_TOPIC = "NLDF/line1/alerts"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""
@@ -51,7 +51,3 @@ def get_agv_status_topic(agv_id: str) -> str:
 def get_warehouse_status_topic(warehouse_id: str) -> str:
     """Returns the status topic for a specific warehouse."""
     return f"{WAREHOUSE_STATUS_TOPIC_PREFIX}/{warehouse_id}/status"
-
-def get_device_alerts_topic(device_id: str) -> str:
-    """Returns the status topic for a specific device."""
-    return f"{DEVICE_ALERT_TOPIC_PREFIX}/{device_id}"

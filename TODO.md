@@ -281,8 +281,11 @@ uv run test/run_tests.py
 ✅ 2. simplify quality checker for rework and scrap(based on quality score)
 
 # 7.17
-1. Add last_fault: Dict[str, str] = Field(..., description="Last fault. Should include fault_type, duration, start_time, processed_time, product_id") maybe product and processing related text only for station
-2. Add processing_time or incomming_time for conveyor to resume processing dynamically
+✅ 1. Add last_fault: Dict[str, str] = Field(..., description="Last fault. Should include fault_type, duration, start_time, processed_time, product_id") maybe product and processing related text only for station
+✅ 2. Add processing_time or incomming_time for conveyor to resume processing dynamically
 ✅ 3. AGV action filter based on current_point and target_device
 ✅ 4. load / unload check AGV and target_device can_operate
 ✅ 5. P3 special determine of transfer direction in TripleConveyor not in Station
+
+# 7.18
+1. load unload buffer selection binded to interacting_points，Q has 2 buffer which correspond to 2 interacting_points, but there is no split logic for them

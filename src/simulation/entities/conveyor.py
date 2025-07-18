@@ -22,6 +22,7 @@ class Conveyor(BaseConveyor):
         self.transfer_time = transfer_time # 模拟搬运时间
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
+        self.product_start_times = {}  # Track when each product started transfer
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
@@ -151,8 +152,21 @@ class Conveyor(BaseConveyor):
             # 恢复工作状态
             self.set_status(DeviceStatus.WORKING)
             
-            # 先进行timeout（模拟搬运时间）
-            yield self.env.timeout(self.transfer_time)
+            # 计算剩余传输时间（处理中断后恢复的情况）
+            if product.id in self.product_start_times:
+                # 如果之前已经开始传输，计算已经过去的时间
+                original_start = self.product_start_times[product.id]
+                elapsed_time = self.env.now - original_start
+                remaining_time = max(0, self.transfer_time - elapsed_time)
+                print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 恢复传输，已传输 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+            else:
+                # 第一次开始传输
+                self.product_start_times[product.id] = self.env.now
+                remaining_time = self.transfer_time
+                print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 开始传输，需要 {remaining_time:.1f}s")
+            
+            # 进行timeout（模拟搬运时间）
+            yield self.env.timeout(remaining_time)
             
             # 然后从buffer获取产品（get）
             actual_product = yield self.buffer.get()
@@ -177,13 +191,18 @@ class Conveyor(BaseConveyor):
                 actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
             
             print(f"[{self.env.now:.2f}] Conveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
+            
+            # 清理传输时间记录
+            if actual_product.id in self.product_start_times:
+                del self.product_start_times[actual_product.id]
                 
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ Conveyor {self.id}: Processing of product {product.id} was interrupted")
             # 如果产品已经取出，放回buffer
             if actual_product and actual_product not in self.buffer.items:
-                yield self.downstream_station.buffer.put(actual_product) if self.downstream_station else self.buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] 🔄 Conveyor {self.id}: Product {actual_product.id} returned to downstream station")
+                yield self.buffer.put(actual_product)
+                print(f"[{self.env.now:.2f}] 🔄 Conveyor {self.id}: Product {actual_product.id} returned to buffer")
+            # 不清理 product_start_times，以便恢复时可以继续
             self.set_status(DeviceStatus.FAULT)
                 
         finally:
@@ -192,6 +211,14 @@ class Conveyor(BaseConveyor):
     def recover(self):
         """Custom recovery logic for the conveyor."""
         print(f"[{self.env.now:.2f}] ✅ Conveyor {self.id} is recovering.")
+        
+        # 清理不在buffer中的产品的时间记录
+        products_in_buffer = {p.id for p in self.buffer.items}
+        expired_products = [pid for pid in self.product_start_times if pid not in products_in_buffer]
+        for pid in expired_products:
+            del self.product_start_times[pid]
+            print(f"[{self.env.now:.2f}] 🗑️ Conveyor {self.id}: 清理过期产品 {pid} 的时间记录")
+        
         # 恢复后，它应该继续工作，而不是空闲
         self.set_status(DeviceStatus.WORKING)
         
@@ -223,6 +250,7 @@ class TripleBufferConveyor(BaseConveyor):
         self.transfer_time = transfer_time # 模拟搬运时间
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
+        self.product_start_times = {}  # Track when each product started transfer
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING

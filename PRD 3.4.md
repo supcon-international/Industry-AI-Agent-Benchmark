@@ -274,11 +274,25 @@ _代表：高复杂度产品、需要特殊工艺路径的定制产品_
 | `"AGV电量突降"` | 1. **电池老化**: 正常现象。<br>2. **高负载任务**: 搬运重物上坡。 | 1. `force_charge(target)`<br>2. `optimize_schedule()` (策略调整) | `30s`<br>N/A | 强制充电 |
 | `"效率异常降低"` | 1. **软件过热**: 持续运行导致。<br>2. **润滑油不足**: 机械部件问题。 | 1. `reduce_frequency(target)`<br>2. `request_maintenance(target, 'add_lubricant')` | 自动恢复(300-600s)<br>`120s` | 生产周期延长 |
 
-#### 质检与返工
+#### 质检与返工机制
 
-- **质检失败率**: P1(6%), P2(8%), P3(12%)。
-- **返工规则**: 返回上一工站(StationC)。
-- **返工次数**: 最多 1 次，超过则报废，计入成本。
+系统的质检与返工逻辑基于产品在生产过程中累积的**质量分数**，而非简单的随机失败率。
+
+- **决策机制**: 质量检测站 (QualityCheck) 根据产品的当前质量分数（0-100）和预设的阈值进行决策：
+    - **合格 (Pass)**: 当产品质量分数 >= `80` (pass_threshold)。
+    - **返工 (Rework)**: 当产品质量分数介于 `60` (scrap_threshold) 和 `80` (pass_threshold) 之间。
+    - **报废 (Scrap)**: 当产品质量分数 <= `60` (scrap_threshold)。
+
+- **返工规则**:
+    - **返工目标**: 返工产品需要被送回其**最后访问过的一个加工工站**。对于标准流程的产品（P1, P2, P3首次加工），这个工站通常是 `StationC`。
+    - **返工次数**: 每个产品**最多允许返工1次**。如果返工后的产品在第二次质检中依然不合格（质量分数 < 80），则产品将被直接**报废**。
+
+- **返工流程**:
+    1. 质检站完成检测后，需要返工的产品会被放置在其**出料缓存区 (output_buffer)** 中。
+    2. Agent需要调度一台AGV，从质检站的出料缓存区**装载 (load)** 该返工产品。
+    3. Agent需要命令AGV将产品**运输 (move)** 到正确的返工工站（如StationC）。
+    4. AGV在返工工站完成**卸载 (unload)**，产品进入返工流程。
+    *此流程明确了返工搬运是Agent的职责之一。*
 
 ### 2.7 动态与隐藏约束 (可选)(Deprecated)
 
@@ -405,12 +419,15 @@ graph TD
  
 ---
 
-#### Topic 架构 (Agent视角)
+#### Topic 架构 (Agent视角)(`factory` will be replaced by candidate name)
 
 | Topic | Agent权限 | 描述 | 消息格式 (Payload) |
 | :--- | :--- | :--- | :--- |
 | `factory/station/{id}/status` | **Subscribe** | 订阅所有工站的状态。**包含故障症状信息**。 | JSON (结构化) |
-| `factory/resource/{id}/status`| **Subscribe** | 订阅所有AGV的状态 | JSON (结构化) |
+| `factory/agv/{id}/status`| **Subscribe** | 订阅所有AGV的状态 | JSON (结构化) |
+| `factory/conveyor/{id}/status`| **Subscribe** | 订阅所有传送带的状态 | JSON (结构化) |
+| `factory/warehouse/{id}/status`| **Subscribe** | 订阅所有仓库的状态 | JSON (结构化) |
+| `factory/alerts`| **Subscribe** | 订阅所有设备故障警报 | JSON (结构化) |
 | `factory/orders/new` | **Subscribe** | 接收新订单信息 | JSON (结构化) |
 | `factory/kpi/update` | **Subscribe** | 订阅KPI更新 | JSON (结构化) |
 | `factory/agent/commands`| **Publish**| **核心输出**: 发布选手Agent生成的结构化指令 | JSON (结构化) |

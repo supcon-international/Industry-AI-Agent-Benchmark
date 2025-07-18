@@ -56,6 +56,11 @@ class Station(Device):
         }
         
         self.downstream_conveyor = downstream_conveyor
+        # 产品处理时间跟踪（站点一次只处理一个产品）
+        self.current_product_id = None  # 当前正在处理的产品ID
+        self.current_product_start_time = None  # 当前产品开始处理的时间
+        self.current_product_total_time = None  # 当前产品需要的总处理时间
+        
         # Start the main operational process for the station
         self.env.process(self.run())
         
@@ -69,7 +74,7 @@ class Station(Device):
         super().set_status(new_status, message)
         self.publish_status(message)
 
-    def publish_status(self, message: Optional[str] = None):
+    def publish_status(self, message: Optional[str] = None):  # noqa: ARG002
         """Publishes the current status of the station to MQTT."""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
@@ -140,8 +145,24 @@ class Station(Device):
             efficiency_factor = getattr(self.performance_metrics, 'efficiency_rate', 100.0) / 100.0
             actual_processing_time = processing_time / efficiency_factor
             
+            # 处理中断恢复的逻辑
+            if (self.current_product_id == product.id and 
+                self.current_product_start_time is not None and 
+                self.current_product_total_time is not None):
+                # 如果之前已经开始处理，计算剩余时间
+                elapsed_time = self.env.now - self.current_product_start_time
+                remaining_time = max(0, self.current_product_total_time - elapsed_time)
+                print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 恢复处理，已处理 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+            else:
+                # 第一次开始处理
+                self.current_product_id = product.id
+                self.current_product_start_time = self.env.now
+                self.current_product_total_time = actual_processing_time
+                remaining_time = actual_processing_time
+                print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 开始处理，需要 {actual_processing_time:.1f}s")
+            
             # The actual processing work
-            yield self.env.timeout(actual_processing_time)
+            yield self.env.timeout(remaining_time)
             product = yield self.buffer.get()
             product.process_at_station(self.id, self.env.now)
 
@@ -166,20 +187,28 @@ class Station(Device):
             message = f"Processing of product {product.id} was interrupted: {e.cause}"
             print(f"[{self.env.now:.2f}] ⚠️ {self.id}: {message}")
             if product not in self.buffer.items:
-          # 产品已取出，说明处理时间已经完成，应该继续流转
+                # 产品已取出，说明处理时间已经完成，应该继续流转
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
                 yield self.env.process(self._transfer_product_to_next_stage(product))
+                # 清理时间记录
+                self.current_product_id = None
+                self.current_product_start_time = None
+                self.current_product_total_time = None
             else:
-          # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
-                product.rework_count += 1
+                # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
+                # 不清理时间记录，以便恢复时可以继续
                 print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
         finally:
             # Clear the action handle once the process is complete or interrupted
             self.action = None
+            # 如果产品成功完成处理并转移，清理时间记录
+            if self.current_product_id == product.id and product not in self.buffer.items:
+                self.current_product_id = None
+                self.current_product_start_time = None
+                self.current_product_total_time = None
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
-        from src.simulation.entities.conveyor import TripleBufferConveyor
 
         if self.downstream_conveyor is None:
             # No downstream, end of process
@@ -230,4 +259,20 @@ class Station(Device):
             "total_processing_time": 0.0,
             "average_processing_time": 0.0
         }
+    
+    def recover(self):
+        """Custom recovery logic for the station."""
+        print(f"[{self.env.now:.2f}] ✅ Station {self.id} is recovering.")
+        
+        # 清理不在buffer中的产品的时间记录
+        if self.current_product_id:
+            products_in_buffer = {p.id for p in self.buffer.items}
+            if self.current_product_id not in products_in_buffer:
+                print(f"[{self.env.now:.2f}] 🗑️ Station {self.id}: 清理过期产品 {self.current_product_id} 的时间记录")
+                self.current_product_id = None
+                self.current_product_start_time = None
+                self.current_product_total_time = None
+        
+        # 恢复后，设置为IDLE状态
+        self.set_status(DeviceStatus.IDLE)
 

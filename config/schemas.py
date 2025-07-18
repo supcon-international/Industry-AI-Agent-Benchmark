@@ -89,6 +89,13 @@ class SystemResponse(BaseModel):
     command_id: Optional[str] = Field(None, description="The ID of the command.")
     response: str = Field(..., description="The response to the command.")
 
+class ProductInfo(BaseModel):
+    """简化的产品信息，用于MQTT传输"""
+    id: str = Field(..., description="Product ID")
+    product_type: str = Field(..., description="Product type (P1, P2, P3)")
+    quality_score: float = Field(..., description="Current quality score")
+    rework_count: int = Field(0, description="Number of reworks")
+
 class StationStatus(BaseModel):
     """
     Schema for the status of a production station.
@@ -129,6 +136,8 @@ class ConveyorStatus(BaseModel):
     # Only for TripleBufferConveyor
     upper_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the upper buffer.")
     lower_buffer: Optional[List[str]] = Field(None, description="List of product IDs in the lower buffer.")
+    # 可选：包含详细产品信息
+    # buffer_details: Optional[List[ProductInfo]] = Field(None, description="Detailed product information in buffers")
 
 class WarehouseStatus(BaseModel):
     """

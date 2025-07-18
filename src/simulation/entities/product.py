@@ -28,6 +28,7 @@ class Product:
         current_location (str): 当前所在位置
         process_step (int): 当前工艺步骤索引
         visit_count (Dict[str, int]): 跟踪访问每个工站的次数
+        
     """
     
     # 产品工艺路线定义 - 定义每种产品类型的标准加工顺序

@@ -7,7 +7,7 @@ from enum import Enum
 from src.utils.mqtt_client import MQTTClient
 from config.schemas import DeviceStatus, FaultAlert
 import json 
-from config.topics import get_device_alerts_topic
+from config.topics import DEVICE_ALERT_TOPIC
 
 @dataclass
 class FaultDefinition:
@@ -225,7 +225,7 @@ class FaultSystem:
         )
         
         if self.mqtt_client:
-            self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
+            self.mqtt_client.publish(DEVICE_ALERT_TOPIC, alert_data.model_dump_json())
 
     def _send_recovery_alert(self, device_id: str, last_symptom: str):
         """发送恢复警报"""
@@ -240,7 +240,7 @@ class FaultSystem:
         )
         
         if self.mqtt_client:
-            self.mqtt_client.publish(get_device_alerts_topic(device_id), alert_data.model_dump_json())
+            self.mqtt_client.publish(DEVICE_ALERT_TOPIC, alert_data.model_dump_json())
 
     def force_clear_fault(self, device_id: str) -> bool:
         """强制清除故障（调试用）"""
