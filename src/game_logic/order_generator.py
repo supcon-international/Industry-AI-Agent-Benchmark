@@ -9,6 +9,7 @@ from config.topics import NEW_ORDER_TOPIC
 from src.utils.mqtt_client import MQTTClient
 from src.simulation.entities.warehouse import RawMaterial
 from src.simulation.entities.product import Product
+from src.game_logic.kpi_calculator import KPICalculator
 
 class OrderGenerator:
     """
@@ -19,10 +20,11 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, **kwargs):
+    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, kpi_calculator: Optional[KPICalculator] = None, **kwargs):
         self.env = env
         self.mqtt_client = mqtt_client
         self.raw = raw_material
+        self.kpi_calculator = kpi_calculator
         # Order generation parameters from kwargs
         self.generation_interval_range = kwargs.get('generation_interval_range', (10, 50))
         self.quantity_weights = kwargs.get('quantity_weights', {1: 40, 2: 30, 3: 20, 4: 7, 5: 3})
@@ -139,6 +141,11 @@ class OrderGenerator:
         try:
             if self.mqtt_client:
                 self.mqtt_client.publish(NEW_ORDER_TOPIC, order.model_dump_json())
+            
+            # Register order with KPI calculator
+            if self.kpi_calculator:
+                self.kpi_calculator.register_new_order(order)
+            
             print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
             print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
             print(f"   - Priority: {order.priority.value}")

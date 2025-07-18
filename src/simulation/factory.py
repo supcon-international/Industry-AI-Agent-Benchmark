@@ -52,6 +52,9 @@ class Factory:
         self.order_generator: Optional[OrderGenerator] = None
         self.fault_system: Optional[FaultSystem] = None
         
+        # Initialize KPI calculator early so it can be passed to devices
+        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.layout)
+        
         # Create devices first
         self._create_devices()
         
@@ -77,7 +80,13 @@ class Factory:
         if not self.fault_system:
             print("⚠️ Fault System not configured in layout or is disabled. No faults will be generated.")
         
-        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
+        # Recreate order generator with KPI calculator
+        if self.order_generator:
+            self._update_order_generator_with_kpi()
+        
+        # Update all devices with KPI calculator
+        self._update_agvs_with_kpi()
+        self._update_stations_with_kpi()
         
         # Setup event handlers
         self._setup_event_handlers()
@@ -116,6 +125,8 @@ class Factory:
             agv = AGV(
                 env=self.env,
                 mqtt_client=self.mqtt_client,
+                fault_system=self.fault_system,
+                kpi_calculator=self.kpi_calculator,
                 **agv_cfg
             )
             self.agvs[agv.id] = agv
@@ -179,6 +190,7 @@ class Factory:
                     env=self.env,
                     raw_material=self.raw_material,
                     mqtt_client=self.mqtt_client,
+                    kpi_calculator=None,  # Will be set later
                     **og_config
                 )
                 print(f"[{self.env.now:.2f}] 📝 Created OrderGenerator with config: {og_config}")
@@ -191,30 +203,35 @@ class Factory:
                 env=self.env,
                 devices=self.all_devices,
                 mqtt_client=self.mqtt_client,
+                kpi_calculator=self.kpi_calculator,
                 **fs_config
             )
             print(f"[{self.env.now:.2f}] 🔧 Created FaultSystem with config: {fs_config}")
         elif self.no_faults_mode:
             print("🚫 Fault System Disabled (no-faults mode).")
 
+    def _update_order_generator_with_kpi(self):
+        """Update order generator with KPI calculator reference."""
+        if self.order_generator and self.kpi_calculator:
+            self.order_generator.kpi_calculator = self.kpi_calculator
+    
+    def _update_agvs_with_kpi(self):
+        """Update AGVs with KPI calculator reference."""
+        if self.kpi_calculator:
+            for agv in self.agvs.values():
+                agv.kpi_calculator = self.kpi_calculator
+    
+    def _update_stations_with_kpi(self):
+        """Update stations with KPI calculator reference."""
+        if self.kpi_calculator:
+            for station in self.stations.values():
+                station.kpi_calculator = self.kpi_calculator
+    
     def _setup_event_handlers(self):
         """Setup event handlers for order processing and fault handling."""
-        if not self.order_generator:
-            return
-        # Register callback for new orders
-        def on_new_order(order):
-            self.kpi_calculator.register_new_order(order)
-            print(f"[{self.env.now:.2f}] 📝 Registered order {order.order_id} for KPI tracking")
-        
-        # This would be called when orders are generated
-        self.order_generator._publish_order = self._wrap_order_publisher(self.order_generator._publish_order, on_new_order)
-
-    def _wrap_order_publisher(self, original_publish, callback):
-        """Wrap the order publisher to trigger callbacks."""
-        def wrapped_publisher(order):
-            original_publish(order)
-            callback(order)
-        return wrapped_publisher
+        # Force initial KPI update
+        if self.kpi_calculator:
+            self.kpi_calculator.force_kpi_update()
 
     def get_available_devices(self) -> List[str]:
         """
@@ -342,6 +359,36 @@ class Factory:
         self.env.run(until=until)
         # print("--- Factory simulation finished ---")
 
+    def print_final_scores(self):
+        """Print final competition scores. Should be called only when simulation truly ends."""
+        if self.kpi_calculator:
+            final_scores = self.kpi_calculator.get_final_score()
+            print(f"\n{'='*60}")
+            print("🏆 最终竞赛得分（基于 PRD 3.4 第2.8节 KPI 指标）")
+            print(f"{'='*60}")
+            print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
+            print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
+            print(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
+            print(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
+            print(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
+            print(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
+            print(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
+            print(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
+            print(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
+            print(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
+            print(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
+            print(f"\n总得分: {final_scores['total_score']:.2f}")
+            print(f"{'='*60}\n")
+            
+            # Force a final KPI update with final scores
+            self.kpi_calculator.force_kpi_update()
+    
+    def get_final_scores(self) -> Optional[Dict]:
+        """Get final competition scores from KPI calculator."""
+        if self.kpi_calculator:
+            return self.kpi_calculator.get_final_score()
+        return None
+    
     def get_factory_stats(self) -> Dict:
         """Get comprehensive factory statistics"""
         station_stats = {}

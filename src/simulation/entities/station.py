@@ -33,7 +33,8 @@ class Station(Device):
         processing_times: Dict[str, Tuple[int, int]] = {},
         downstream_conveyor=None,
         mqtt_client=None,
-        interacting_points: list = []
+        interacting_points: list = [],
+        kpi_calculator=None  # Injected dependency
     ):
         # TODO: Add a Processing Area(simpy.Store) to hold products that are being processed
         super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client, interacting_points=interacting_points)
@@ -52,10 +53,14 @@ class Station(Device):
         self.stats = {
             "products_processed": 0,
             "total_processing_time": 0.0,
-            "average_processing_time": 0.0
+            "average_processing_time": 0.0,
+            "working_time": 0.0,  # Total time spent in PROCESSING status
+            "start_time": env.now  # Track when station started
         }
         
         self.downstream_conveyor = downstream_conveyor
+        self.kpi_calculator = kpi_calculator
+        self.last_status_change_time = env.now
         # 产品处理时间跟踪（站点一次只处理一个产品）
         self.current_product_id = None  # 当前正在处理的产品ID
         self.current_product_start_time = None  # 当前产品开始处理的时间
@@ -71,6 +76,18 @@ class Station(Device):
         """Overrides the base method to publish status on change."""
         if self.status == new_status:
             return
+        
+        # Track working time for KPI
+        if self.status == DeviceStatus.PROCESSING:
+            processing_duration = self.env.now - self.last_status_change_time
+            self.stats["working_time"] += processing_duration
+            
+            # Update KPI calculator with device utilization
+            if self.kpi_calculator:
+                self.kpi_calculator.add_energy_cost(self.id, processing_duration)
+                self.kpi_calculator.update_device_utilization(self.id, self.env.now - self.stats["start_time"])
+        
+        self.last_status_change_time = self.env.now
         super().set_status(new_status, message)
         self.publish_status(message)
 

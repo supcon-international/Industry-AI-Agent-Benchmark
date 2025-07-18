@@ -154,6 +154,10 @@ class QualityChecker(Station):
             self.stats["passed_count"] += 1
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
             
+            # Report to KPI calculator
+            if hasattr(self, 'kpi_calculator') and self.kpi_calculator:
+                self.kpi_calculator.complete_order_item(product.order_id, product.product_type, passed_quality=True)
+            
             # Check if output buffer is full and report if needed
             if len(self.output_buffer.items) >= self.output_buffer_capacity:
                 self.report_buffer_full("output_buffer")
@@ -165,6 +169,11 @@ class QualityChecker(Station):
         elif decision == SimpleDecision.SCRAP:
             self.stats["scrapped_count"] += 1
             self.set_status(DeviceStatus.SCRAP, message="产品报废")
+            
+            # Report to KPI calculator
+            if hasattr(self, 'kpi_calculator') and self.kpi_calculator:
+                self.kpi_calculator.complete_order_item(product.order_id, product.product_type, passed_quality=False)
+            
             yield self.env.process(self._handle_product_scrap(product, "quality_inspection_failed"))
             
         elif decision == SimpleDecision.REWORK:

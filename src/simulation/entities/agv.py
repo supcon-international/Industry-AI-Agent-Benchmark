@@ -45,7 +45,8 @@ class AGV(Vehicle):
         battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
         battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
         fault_system=None, # Injected dependency
-        mqtt_client=None
+        mqtt_client=None,
+        kpi_calculator=None  # KPI calculator dependency
     ):
         if position not in path_points.values():
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
@@ -55,6 +56,7 @@ class AGV(Vehicle):
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
         self.fault_system = fault_system
+        self.kpi_calculator = kpi_calculator
         self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
         self.path_points = path_points
         self.target_point = None # current target point if moving
@@ -190,6 +192,10 @@ class AGV(Vehicle):
             # update statistics
             self.stats["total_distance"] += distance
             self.stats["tasks_completed"] += 1
+            
+            # Report task completion to KPI calculator
+            if self.kpi_calculator:
+                self.kpi_calculator.register_agv_task_complete(self.id)
             
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
             
@@ -460,6 +466,17 @@ class AGV(Vehicle):
         # update statistics
         self.stats["total_charge_time"] += charge_time
         
+        # Report charge event with duration to KPI calculator
+        if self.kpi_calculator and hasattr(self, '_charge_start_time'):
+            actual_charge_duration = self.env.now - self._charge_start_time
+            is_active = getattr(self, '_is_active_charge', False)
+            self.kpi_calculator.register_agv_charge(self.id, is_active, actual_charge_duration)
+            # Clean up temporary attributes
+            if hasattr(self, '_charge_start_time'):
+                del self._charge_start_time
+            if hasattr(self, '_is_active_charge'):
+                del self._is_active_charge
+        
         print(f"[{self.env.now:.2f}] ✅ {self.id}: 充电完成，当前电量: {self.battery_level:.1f}%")
 
         # Before setting to IDLE, check for pending faults
@@ -475,6 +492,11 @@ class AGV(Vehicle):
         self.stats["forced_charge_count"] += 1
         self.stats["low_battery_interruptions"] += 1
         
+        # Report to KPI calculator
+        if self.kpi_calculator:
+            # Note: charge_duration will be calculated and reported after charging completes
+            self._charge_start_time = self.env.now
+        
         # charge to safe level
         yield self.env.process(self.charge_battery(50.0, "emergency charging to 50%"))
 
@@ -483,6 +505,12 @@ class AGV(Vehicle):
         target_level = float(target_level)
         print(f"[{self.env.now:.2f}] 🔋 {self.id}: voluntary charging")
         self.stats["voluntary_charge_count"] += 1
+        
+        # Report to KPI calculator
+        if self.kpi_calculator:
+            # Note: charge_duration will be calculated and reported after charging completes
+            self._charge_start_time = self.env.now
+            self._is_active_charge = True
         
         self.action = self.env.process(self.charge_battery(target_level, f"voluntary charging to {target_level:.1f}%"))
         try:
@@ -500,6 +528,10 @@ class AGV(Vehicle):
         while True:
             # check every 5 seconds
             yield self.env.timeout(5.0)
+            
+            # Update transport time for KPI if moving
+            if self.status == DeviceStatus.MOVING and self.kpi_calculator:
+                self.kpi_calculator.update_agv_transport_time(self.id, 5.0)
             
             # if battery is low and not charging, start emergency charging
             if self.is_battery_low() and self.status != DeviceStatus.CHARGING:

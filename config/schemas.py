@@ -188,7 +188,7 @@ class KPIUpdate(BaseModel):
     
     # Production Efficiency (40%)
     order_completion_rate: float = Field(..., description="Percentage of orders completed.")
-    average_production_cycle: float = Field(..., description="Average time to complete an order (seconds).")
+    average_production_cycle: float = Field(..., description="Weighted average of actual/theoretical production time ratio.")
     on_time_delivery_rate: float = Field(..., description="Percentage of orders completed on time.")
     device_utilization: float = Field(..., description="Average device utilization rate (%).")
     
@@ -202,9 +202,10 @@ class KPIUpdate(BaseModel):
     maintenance_costs: float = Field(..., description="Total maintenance costs.")
     scrap_costs: float = Field(..., description="Total costs from scrapped products.")
     
-    # Robustness (30%)
-    diagnosis_accuracy: float = Field(..., description="Percentage of correct fault diagnoses.")
-    average_recovery_time: float = Field(..., description="Average time to recover from faults (seconds).")
+    # AGV Efficiency Metrics
+    charge_strategy_efficiency: float = Field(0.0, description="Percentage of active charges vs total charges (%).")
+    agv_energy_efficiency: float = Field(0.0, description="AGV tasks completed per minute of charging.")
+    agv_utilization: float = Field(0.0, description="Average AGV transport time utilization (%).")
     
     # Raw Counts for Reference
     total_orders: int = Field(..., description="Total number of orders received.")
