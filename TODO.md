@@ -285,3 +285,4 @@ uv run test/run_tests.py
 2. Add processing_time or incomming_time for conveyor to resume processing dynamically
 ✅ 3. AGV action filter based on current_point and target_device
 ✅ 4. load / unload check AGV and target_device can_operate
+✅ 5. P3 special determine of transfer direction in TripleConveyor not in Station

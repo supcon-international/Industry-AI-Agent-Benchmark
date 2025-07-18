@@ -165,12 +165,17 @@ class Conveyor(BaseConveyor):
             
             self.publish_status()
             
-            # 更新产品位置信息：这里不使用update_location以避免移动检查，因为传送带流转是自动的
-            actual_product.current_location = self.downstream_station.id
-            actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
-            
-            # 最后将产品放入下游（put）
+            # 先将产品放入下游（put）
             yield self.downstream_station.buffer.put(actual_product)
+            
+            # put成功后更新产品位置信息
+            if hasattr(actual_product, 'update_location'):
+                actual_product.update_location(self.downstream_station.id, self.env.now)
+            else:
+                # 兼容没有update_location方法的产品
+                actual_product.current_location = self.downstream_station.id
+                actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
+            
             print(f"[{self.env.now:.2f}] Conveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
                 
         except simpy.Interrupt as e:
@@ -371,6 +376,9 @@ class TripleBufferConveyor(BaseConveyor):
             
             # 恢复工作状态
             self.set_status(DeviceStatus.WORKING)
+
+            # 使用Product的智能路由决策
+            target_buffer = self._determine_target_buffer_for_product(product)
             
             # 先进行timeout（模拟搬运时间）
             yield self.env.timeout(self.transfer_time)
@@ -387,13 +395,28 @@ class TripleBufferConveyor(BaseConveyor):
             
             self.publish_status()
             
-            # 更新产品位置信息：这里不使用update_location以避免移动检查，因为传送带流转是自动的
-            actual_product.current_location = self.downstream_station.id
-            actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
-            
-            # 将产品放入下游（put）
-            yield self.downstream_station.buffer.put(actual_product)
-            print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
+            # 根据目标buffer类型决定处理
+            if target_buffer in ["upper", "lower"]:
+                # P3产品返工路径：选择最优的side buffer
+                chosen_buffer = self._choose_optimal_side_buffer()
+                buffer_name = "upper_buffer" if chosen_buffer == self.upper_buffer else "lower_buffer"
+                # 不更新位置，因为还在同一个conveyor内
+                actual_product.add_history(self.env.now, f"Moved to {buffer_name} of {self.id} for rework")
+                yield chosen_buffer.put(actual_product)
+                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {buffer_name}")
+            else:
+                # 正常流转到下游站点
+                # 先尝试放入，成功后再更新位置信息
+                yield self.downstream_station.buffer.put(actual_product)
+                # put成功后更新产品位置信息
+                if hasattr(actual_product, 'update_location'):
+                    actual_product.update_location(self.downstream_station.id, self.env.now)
+                else:
+                    # 兼容没有update_location方法的产品
+                    actual_product.current_location = self.downstream_station.id
+                    actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
+                
+                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
                 
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
@@ -406,6 +429,36 @@ class TripleBufferConveyor(BaseConveyor):
         finally:
             self.publish_status()
 
+    def _determine_target_buffer_for_product(self, product):
+        """根据产品类型和工艺状态确定目标buffer"""
+        if product.product_type != "P3":
+            return "main"
+        
+        # P3产品的特殊逻辑：基于访问次数判断
+        stationc_visits = product.visit_count.get("StationC", 0)
+        
+        if stationc_visits == 1:  # 第一次完成StationC处理
+            return "upper"  # 返工到side buffer
+        elif stationc_visits >= 2:  # 第二次及以后完成StationC处理
+            return "main"   # 进入主流程
+        else:
+            return "main"   # 默认主流程
+    
+    def _choose_optimal_side_buffer(self):
+        """选择最优的side buffer（upper或lower）"""
+        if self.downstream_station is None:
+            return self.upper_buffer  # 默认返回upper
+        
+        # 两个都满的情况下，选择较空的那个（会阻塞直到有空间）
+        if len(self.upper_buffer.items) <= len(self.lower_buffer.items):
+            if self.is_full("upper") and self.is_full("lower"):
+                self.report_buffer_full("upper_buffer and lower_buffer are full")
+            return self.upper_buffer
+        else:
+            if self.is_full("upper") and self.is_full("lower"):
+                self.report_buffer_full("upper_buffer and lower_buffer are full")
+            return self.lower_buffer
+        
     def recover(self):
         """Custom recovery logic for the TripleBufferConveyor."""
         print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id} is recovering.")

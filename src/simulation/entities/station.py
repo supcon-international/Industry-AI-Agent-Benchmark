@@ -188,71 +188,12 @@ class Station(Device):
         # Set status to INTERACTING before the potentially blocking push operation
         self.set_status(DeviceStatus.INTERACTING)
 
-        # TripleBufferConveyor special handling (only StationC)
-        if isinstance(self.downstream_conveyor, TripleBufferConveyor):
-            # 使用Product的智能路由决策
-            target_buffer = self._determine_target_buffer_for_product(product)
-            
-            if target_buffer in ["upper", "lower"]:
-                # P3产品返工路径：选择最优的side buffer
-                chosen_buffer = self._choose_optimal_side_buffer(target_buffer)
-                yield self.downstream_conveyor.push(product, buffer_type=chosen_buffer)
-                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} (P3-返工) moved to downstream {chosen_buffer} buffer")
-            else:
-                # 主流程路径：直接到main buffer
-                yield self.downstream_conveyor.push(product, buffer_type="main")
-                print(f"[{self.env.now:.2f}] 🚚 {self.id}: Product {product.id} moved to downstream main buffer")
-        else:
-            # normal conveyor - SimPy push()会自动阻塞直到有空间
-            yield self.downstream_conveyor.push(product)
+        # normal conveyor - SimPy push()会自动阻塞直到有空间
+        yield self.downstream_conveyor.push(product)
         
         # Set status back to IDLE after the push operation is complete
         self.set_status(DeviceStatus.IDLE)
         return
-
-    def _determine_target_buffer_for_product(self, product):
-        """根据产品类型和工艺状态确定目标buffer"""
-        if product.product_type != "P3":
-            return "main"
-        
-        # P3产品的特殊逻辑：基于访问次数判断
-        stationc_visits = product.visit_count.get("StationC", 0)
-        
-        if stationc_visits == 1:  # 第一次完成StationC处理
-            return "upper"  # 返工到side buffer
-        elif stationc_visits >= 2:  # 第二次及以后完成StationC处理
-            return "main"   # 进入主流程
-        else:
-            return "main"   # 默认主流程
-
-    def _choose_optimal_side_buffer(self, preferred_buffer):
-        """选择最优的side buffer（upper或lower）"""
-        if self.downstream_conveyor is None:
-            return "upper"  # 默认返回upper
-            
-        # 检查优选buffer是否可用
-        if preferred_buffer == "upper" and not self.downstream_conveyor.is_full("upper"):
-            return "upper"
-        elif preferred_buffer == "lower" and not self.downstream_conveyor.is_full("lower"):
-            return "lower"
-        
-        # 优选buffer满，检查另一个
-        if preferred_buffer == "upper":
-            if not self.downstream_conveyor.is_full("lower"):
-                return "lower"
-        else:  # preferred_buffer == "lower"
-            if not self.downstream_conveyor.is_full("upper"):
-                return "upper"
-        
-        # 两个都满的情况下，选择较空的那个（会阻塞直到有空间）
-        if len(self.downstream_conveyor.upper_buffer.items) <= len(self.downstream_conveyor.lower_buffer.items):
-            if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
-                self.report_buffer_full("downstream_conveyor_all_side_buffer")
-            return "upper"
-        else:
-            if self.downstream_conveyor.is_full("upper") and self.downstream_conveyor.is_full("lower"):
-                self.report_buffer_full("downstream_conveyor_all_side_buffer")
-            return "lower"
 
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer, wrapped in INTERACTING state."""

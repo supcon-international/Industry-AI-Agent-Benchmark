@@ -136,7 +136,7 @@ class Product:
     
     def update_location(self, new_location: str, timestamp: float) -> bool:
         """
-        更新产品位置（仅在移动检查通过后调用）
+        更新产品位置（应在移动检查通过后调用）
         
         Args:
             new_location: 新位置
@@ -145,13 +145,6 @@ class Product:
         Returns:
             bool: 更新是否成功
         """
-        # 先检查移动是否合法
-        can_move, reason = self.next_move_checker(timestamp, new_location)
-        
-        if not can_move:
-            print(f"[{timestamp:.2f}] ❌ {self.id}: {reason}")
-            return False
-        
         # 更新位置
         old_location = self.current_location
         self.current_location = new_location
