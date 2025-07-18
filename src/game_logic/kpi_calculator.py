@@ -100,8 +100,8 @@ class KPICalculator:
         kpi_weights = config.get('kpi_weights', {})
         self.weights = {
             'production_efficiency': kpi_weights.get('production_efficiency', 0.40),
-            'cost_control': kpi_weights.get('cost_control', 0.30),
-            'robustness': kpi_weights.get('robustness', 0.30)  # Kept for backward compatibility
+            'quality_cost': kpi_weights.get('quality_cost', 0.30),
+            'agv_efficiency': kpi_weights.get('agv_efficiency', 0.30)
         }
         
         # Load sub-weights for each KPI category
@@ -390,17 +390,6 @@ class KPICalculator:
             self.stats.maintenance_costs + self.stats.scrap_costs
         )
         
-        # Robustness Metrics (30%)
-        diagnosis_accuracy = (
-            (self.stats.correct_diagnoses / self.stats.total_faults * 100)
-            if self.stats.total_faults > 0 else 100.0
-        )
-        
-        average_recovery_time = (
-            (self.stats.total_recovery_time / self.stats.total_faults)
-            if self.stats.total_faults > 0 else 0.0
-        )
-        
         # AGV Metrics
         # 充电策略效率
         total_charges = self.stats.agv_active_charges + self.stats.agv_passive_charges
@@ -556,7 +545,7 @@ class KPICalculator:
         quality_cost_score = (
             quality_cost_components['first_pass_rate'] * self.quality_cost_weights.get('first_pass_rate', 0.4) +
             quality_cost_components['cost_efficiency'] * self.quality_cost_weights.get('cost_efficiency', 0.6)
-        ) * self.weights['cost_control']  # 使用配置的权重
+        ) * self.weights['quality_cost']  # 使用配置的权重
         
         # AGV效率评分 (30%)
         # 包含：充电策略效率、AGV能效比、AGV利用率
@@ -566,13 +555,12 @@ class KPICalculator:
             'utilization': min(100, kpis.agv_utilization)  # 已经是百分比
         }
         
-        # AGV效率权重使用原鲁棒性权重（因为PRD未指定）
-        agv_weight = self.weights.get('agv_efficiency', self.weights.get('robustness', 0.3))
+        # AGV效率权重
         agv_score = (
             agv_components['charge_strategy'] * self.agv_weights.get('charge_strategy', 0.3) +
             agv_components['energy_efficiency'] * self.agv_weights.get('energy_efficiency', 0.4) +
             agv_components['utilization'] * self.agv_weights.get('utilization', 0.3)
-        ) * agv_weight
+        ) * self.weights['agv_efficiency']
         
         total_score = efficiency_score + quality_cost_score + agv_score
         

@@ -166,8 +166,8 @@ fault_system:
 # KPI计算权重
 kpi_weights:
   production_efficiency: 0.40 # 生产效率 40%
-  cost_control: 0.30 # 成本控制 30%
-  robustness: 0.30 # 鲁棒性 30%
+  quality_cost: 0.30 # 质量与成本 30%
+  agv_efficiency: 0.30 # AGV操控效率 30%
   
   # 生产效率子权重 (总和应为1.0)
   efficiency_components:
