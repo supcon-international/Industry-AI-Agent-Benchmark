@@ -69,6 +69,22 @@ class QualityChecker(Station):
         print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{self.pass_threshold}%, scrap≤{self.scrap_threshold}%)")
         # The run process is already started by the parent Station class
         
+    def publish_status(self, message: Optional[str] = None):
+        """Publishes the current status of the station to MQTT."""
+        if not self.mqtt_client or not self.mqtt_client.is_connected():
+            return
+            
+        status_data = StationStatus(
+            timestamp=self.env.now,
+            source_id=self.id,
+            status=self.status,
+            buffer=[p.id for p in self.buffer.items],
+            stats=self.stats,
+            output_buffer=[p.id for p in self.output_buffer.items]
+        )
+        topic = get_station_status_topic(self.id)
+        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
+
     def process_product(self, product: Product):
         """
         Quality check process following Station's timeout-get-put pattern.
@@ -92,7 +108,8 @@ class QualityChecker(Station):
             print(f"[{self.env.now:.2f}] 🔍 {self.id}: 检测产品中... (预计{actual_processing_time:.1f}s)")
             
             # The actual processing work (timeout-get pattern like Station)
-            yield self.env.timeout(actual_processing_time)            
+            yield self.env.timeout(actual_processing_time)
+            product = yield self.buffer.get()
             product.process_at_station(self.id, self.env.now)
             
             # Update statistics upon successful completion

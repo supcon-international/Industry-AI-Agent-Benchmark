@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def agv_pickup_q_output(env, qc, interval=15):
+def agv_pickup_output(env, qc, interval=15):
     """模拟AGV定时搬运QualityChecker output buffer"""
     while True:
         if len(qc.output_buffer.items) > 0:
@@ -69,7 +69,7 @@ def test_buffer_full_alert():
     # TripleBufferConveyor
     conveyor_1 = Conveyor(env, id="Conveyor_AB", capacity=3, position=(2, 0), mqtt_client=mqtt_client)
     conveyor_2 = Conveyor(env, id="Conveyor_BC", capacity=3, position=(2, 0), mqtt_client=mqtt_client)
-    conveyor_3 = TripleBufferConveyor(env, id="Conveyor_CQ", main_capacity=2, upper_capacity=1, lower_capacity=1, position=(2, 0), mqtt_client=mqtt_client)
+    conveyor_3 = TripleBufferConveyor(env, id="Conveyor_CQ", main_capacity=2, upper_capacity=2, lower_capacity=4, position=(2, 0), mqtt_client=mqtt_client)
     # conveyor.set_downstream_station = lambda x: None  # 不自动流转
     station_a.downstream_conveyor = conveyor_1
     station_b.downstream_conveyor = conveyor_2
@@ -99,18 +99,18 @@ def test_buffer_full_alert():
             p = Product("P1", f"order_{i}")
             print(f"[{env.now:.2f}] 订单生成: {p.id}")
             # 放入StationC
-            yield station_a.buffer.put(p)
-            yield env.timeout(3)
+            yield station_c.buffer.put(p)
+            yield env.timeout(10)
 
     # # 启动AGV搬运进程
-    # env.process(agv_pickup_q_output(env, qc, interval=10))
+    # env.process(agv_pickup_output(env, qc, interval=10))
     # 启动产品流转
     env.process(product_flow(env))
 
     # 运行仿真
-    for i in range(1000):
+    for i in range(1000000):
         env.run(until=env.now + 1.0)
-        time.sleep(0)
+        time.sleep(0.01)
 
 if __name__ == '__main__':
     test_buffer_full_alert()

@@ -129,6 +129,7 @@ class Factory:
                 "env": self.env,
                 "id": conveyor_id,
                 "position": conveyor_cfg['position'],
+                "interacting_points": conveyor_cfg['interacting_points'],
                 "transfer_time": conveyor_cfg['transfer_time'],
                 "mqtt_client": self.mqtt_client
             }

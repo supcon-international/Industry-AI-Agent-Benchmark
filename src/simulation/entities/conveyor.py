@@ -231,12 +231,7 @@ class TripleBufferConveyor(BaseConveyor):
     def _determine_status(self):
         """根据当前状态确定传送带状态"""
         # 只有main_buffer满且下游无法接收时才算blocked
-        if (len(self.main_buffer.items) >= self.main_buffer.capacity and 
-            self.downstream_station and not self.downstream_station.can_operate()):
-            return DeviceStatus.BLOCKED
-        elif len(self.upper_buffer.items) >= self.upper_buffer.capacity:
-            return DeviceStatus.BLOCKED
-        elif len(self.lower_buffer.items) >= self.lower_buffer.capacity:
+        if self.is_full("main") and self.is_full("upper") and self.is_full("lower"):
             return DeviceStatus.BLOCKED
         return DeviceStatus.WORKING
 
@@ -420,10 +415,10 @@ class TripleBufferConveyor(BaseConveyor):
                 
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
-            # 如果产品已经取出，安全地将产品退回起点
+            # 如果产品已经取出，放回main_buffer
             if actual_product and actual_product not in self.main_buffer.items:
-                yield self.downstream_station.buffer.put(actual_product) if self.downstream_station else self.main_buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: Product {actual_product.id} returned to downstream station")
+                yield self.main_buffer.put(actual_product)
+                print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: Product {actual_product.id} returned to main_buffer")
             self.set_status(DeviceStatus.FAULT)
                 
         finally:
@@ -437,11 +432,16 @@ class TripleBufferConveyor(BaseConveyor):
         # P3产品的特殊逻辑：基于访问次数判断
         stationc_visits = product.visit_count.get("StationC", 0)
         
+        print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P3产品 {product.id} StationC访问次数={stationc_visits}")
+        
         if stationc_visits == 1:  # 第一次完成StationC处理
+            print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: P3产品 {product.id} 第一次处理完成，需要返工")
             return "upper"  # 返工到side buffer
         elif stationc_visits >= 2:  # 第二次及以后完成StationC处理
+            print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id}: P3产品 {product.id} 第二次处理完成，继续主流程")
             return "main"   # 进入主流程
         else:
+            print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: P3产品 {product.id} 未处理过，继续主流程")
             return "main"   # 默认主流程
     
     def _choose_optimal_side_buffer(self):
@@ -449,14 +449,11 @@ class TripleBufferConveyor(BaseConveyor):
         if self.downstream_station is None:
             return self.upper_buffer  # 默认返回upper
         
-        # 两个都满的情况下，选择较空的那个（会阻塞直到有空间）
-        if len(self.upper_buffer.items) <= len(self.lower_buffer.items):
+        if self.upper_buffer.capacity - len(self.upper_buffer.items) >= self.lower_buffer.capacity - len(self.lower_buffer.items):
             if self.is_full("upper") and self.is_full("lower"):
                 self.report_buffer_full("upper_buffer and lower_buffer are full")
             return self.upper_buffer
         else:
-            if self.is_full("upper") and self.is_full("lower"):
-                self.report_buffer_full("upper_buffer and lower_buffer are full")
             return self.lower_buffer
         
     def recover(self):
