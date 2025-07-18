@@ -82,22 +82,37 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory):
                 print("故障系统未初始化，请先初始化故障系统。")
                 continue
             
-            device_id_short = input(fault_prompt).strip().upper()
-            device_id = fault_devices.get(device_id_short)
-            if not device_id:
-                print("无效设备编号，请重试。")
-                continue
-
-            fault_type_in = input("请输入故障类型 (1:AGV, 2:工站, 3:传送带): ").strip()
-            try:
-                fault_duration = float(input("请输入故障持续时间 (秒): ").strip())
+            # 1:StationB, 2:Conveyor_BC, 3:StationC
+            fast_fault = input("请输入故障类型 (1:StationB for 50s, 2:Conveyor_BC for 50s, 3:StationC for 50s) else manual: ").strip()
+            if fast_fault == "1":
+                fault_type = FaultType.STATION_FAULT
+                device_id = "StationB"
+                fault_duration = 50.0
+            elif fast_fault == "2":
+                fault_type = FaultType.CONVEYOR_FAULT
+                device_id = "Conveyor_BC"
+                fault_duration = 50.0
+            elif fast_fault == "3":
+                fault_type = FaultType.STATION_FAULT
+                device_id = "StationC"
+                fault_duration = 50.0
+            else:
+                print("手动设置故障，请输入设备编号: ")
+                fault_type_in = input("请输入故障类型 (1:AGV, 2:工站, 3:传送带): ").strip()
                 fault_map = {"1": FaultType.AGV_FAULT, "2": FaultType.STATION_FAULT, "3": FaultType.CONVEYOR_FAULT}
                 fault_type = fault_map.get(fault_type_in)
-                if not fault_type:
-                    raise ValueError("无效的故障类型")
-            except (ValueError, KeyError) as e:
-                print(f"输入无效: {e}！")
-                continue
+                device_id_short = input(fault_prompt).strip().upper()
+                device_id = fault_devices.get(device_id_short)
+                if not device_id:
+                    print("无效设备编号，请重试。")
+                    continue
+                fault_duration = float(input("请输入故障持续时间 (秒): ").strip())
+                try:
+                    if not fault_type:
+                        raise ValueError("无效的故障类型")
+                except (ValueError, KeyError) as e:
+                    print(f"输入无效: {e}！")
+                    continue
             
             factory.fault_system._inject_fault_now(device_id, fault_type, fault_duration)
             print(f"已注入故障: {device_id} {fault_type.name} {fault_duration}s")
