@@ -311,11 +311,7 @@ class AGV(Vehicle):
             # 成功取货后的操作
             if success and product:
                 buffer_desc = f" {buffer_type}" if buffer_type else ""
-                # 检查产品移动是否符合工艺路线
-                if hasattr(product, 'current_location'):
-                    # 将产品标记为在AGV上
-                    product.current_location = f"AGV_{self.id}"
-                    product.add_history(self.env.now, f"Loaded onto {self.id} from {device.id}")
+                product.add_history(self.env.now, f"Loaded onto {self.id} from {device.id}")
                 
                 self.set_status(DeviceStatus.INTERACTING, f"loading from {device.id}{buffer_desc}")
                 yield self.env.timeout(time_out)
