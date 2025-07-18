@@ -28,13 +28,9 @@ class Conveyor(BaseConveyor):
         self.status = DeviceStatus.WORKING
         self.publish_status()
 
-    def _determine_status(self):
-        """根据当前状态确定传送带状态"""
-        if self.is_full():
-            # 只有当真正无法继续工作时才算blocked
-            if self.downstream_station and not self.downstream_station.can_operate():
-                return DeviceStatus.BLOCKED
-        return DeviceStatus.WORKING
+    def _should_be_blocked(self):
+        """检查传送带是否应该处于阻塞状态"""
+        return self.is_full() and self.downstream_station and not self.downstream_station.can_operate()
 
     def publish_status(self, **kwargs):
         """直接发布传送带状态，不通过set_status"""
@@ -42,8 +38,8 @@ class Conveyor(BaseConveyor):
             return
 
         # 实时确定状态
-        current_status = self._determine_status()
-        self.status = current_status
+        # current_status = self._determine_status()
+        # self.status = current_status
 
         status_data = ConveyorStatus(
             timestamp=self.env.now,
@@ -121,7 +117,7 @@ class Conveyor(BaseConveyor):
             if not self.can_operate():
                 yield self.env.timeout(1)
                 continue
-            
+
             # 如果没有下游站点，等待
             if self.downstream_station is None:
                 yield self.env.timeout(1)
@@ -131,7 +127,7 @@ class Conveyor(BaseConveyor):
             if len(self.buffer.items) == 0:
                 yield self.env.timeout(0.1)
                 continue
-            
+
             # 设备可操作且有产品，返回
             return
         
@@ -146,11 +142,13 @@ class Conveyor(BaseConveyor):
             # 先等待下游站点可操作
             while not self.downstream_station.can_operate():
                 # 发布blocked状态
-                self.set_status(DeviceStatus.BLOCKED)
+                if self.status != DeviceStatus.BLOCKED and self.can_operate():
+                    self.set_status(DeviceStatus.BLOCKED)
                 yield self.env.timeout(1.0)  # wait before retrying
             
-            # 恢复工作状态
-            self.set_status(DeviceStatus.WORKING)
+            # 恢复工作状态, 但只有在之前是BLOCKED且设备可操作时才恢复
+            if self.status == DeviceStatus.BLOCKED and self.can_operate():
+                self.set_status(DeviceStatus.WORKING)
             
             # 计算剩余传输时间（处理中断后恢复的情况）
             if product.id in self.product_start_times:
@@ -204,7 +202,7 @@ class Conveyor(BaseConveyor):
                 print(f"[{self.env.now:.2f}] 🔄 Conveyor {self.id}: Product {actual_product.id} returned to buffer")
             # 不清理 product_start_times，以便恢复时可以继续
             self.set_status(DeviceStatus.FAULT)
-                
+            
         finally:
             self.publish_status()
 
@@ -256,27 +254,17 @@ class TripleBufferConveyor(BaseConveyor):
         self.status = DeviceStatus.WORKING
         self.publish_status()
 
-    def _determine_status(self):
-        """根据当前状态确定传送带状态"""
-        # 只有main_buffer满且下游无法接收时才算blocked
-        if self.is_full("main") and self.is_full("upper") and self.is_full("lower"):
-            return DeviceStatus.BLOCKED
-        return DeviceStatus.WORKING
+    def _should_be_blocked(self):
+        """检查三缓冲传送带是否应该处于阻塞状态"""
+        # 所有缓冲区都满才算真正阻塞
+        return self.is_full("main") and self.is_full("upper") and self.is_full("lower") and self.downstream_station and not self.downstream_station.can_operate()
 
     def publish_status(self, **kwargs):
-        """直接发布传送带状态，不通过set_status"""
+        """发布当前传送带状态到MQTT"""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
 
-        # 实时确定状态
-        current_status = self._determine_status()
-        self.status = current_status
-        
-        # 判断是否满载：所有缓冲区都满
-        is_full = (len(self.main_buffer.items) >= self.main_buffer.capacity and
-                   len(self.upper_buffer.items) >= self.upper_buffer.capacity and
-                   len(self.lower_buffer.items) >= self.lower_buffer.capacity)
-        
+        # 只发布，不修改状态
         status_data = ConveyorStatus(
             timestamp=self.env.now,
             source_id=self.id,
@@ -394,11 +382,13 @@ class TripleBufferConveyor(BaseConveyor):
             # Before putting, check if the station can operate
             while not self.downstream_station.can_operate():
                 # 发布blocked状态
-                self.set_status(DeviceStatus.BLOCKED)
+                if self.status != DeviceStatus.BLOCKED and self.can_operate():
+                    self.set_status(DeviceStatus.BLOCKED)
                 yield self.env.timeout(1.0)  # wait before retrying
             
-            # 恢复工作状态
-            self.set_status(DeviceStatus.WORKING)
+            # 恢复工作状态, 但只有在之前是BLOCKED且设备可操作时才恢复
+            if self.can_operate():
+                self.set_status(DeviceStatus.WORKING)
 
             # 使用Product的智能路由决策
             target_buffer = self._determine_target_buffer_for_product(product)
@@ -448,6 +438,7 @@ class TripleBufferConveyor(BaseConveyor):
                 yield self.main_buffer.put(actual_product)
                 print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: Product {actual_product.id} returned to main_buffer")
             self.set_status(DeviceStatus.FAULT)
+            self.publish_status() # 立即发布故障状态
                 
         finally:
             self.publish_status()
