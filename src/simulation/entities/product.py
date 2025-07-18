@@ -149,8 +149,8 @@ class Product:
         old_location = self.current_location
         self.current_location = new_location
         
-        # 更新访问次数
-        self.visit_count[new_location] = self.visit_count.get(new_location, 0) + 1
+        # 注意：访问次数已在 process_at_station 中更新，这里不再更新
+        # 避免重复计数
         
         # 更新工艺步骤索引
         route = self.PROCESS_ROUTES[self.product_type]
@@ -206,6 +206,9 @@ class Product:
         
     def process_at_station(self, station_id: str, timestamp: float):
         """记录在工站的处理（不进行移动检查，假设产品已经在该工站）"""
+        # 记录调试信息
+        old_count = self.visit_count.get(station_id, 0)
+        
         self.processing_stations.append(station_id)
         self.add_history(timestamp, f"Processed at {station_id}")
             
@@ -221,6 +224,8 @@ class Product:
         
         # 更新访问计数（重要：用于P3产品的流程控制）
         self.visit_count[station_id] = self.visit_count.get(station_id, 0) + 1
+        
+        print(f"[{timestamp:.2f}] 📊 {self.id}: {station_id} 访问次数: {old_count} → {self.visit_count[station_id]}")
         
     def start_inspection(self, timestamp: float):
         """开始质量检测"""

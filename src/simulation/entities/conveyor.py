@@ -427,15 +427,16 @@ class TripleBufferConveyor(BaseConveyor):
     def _determine_target_buffer_for_product(self, product):
         """根据产品类型和工艺状态确定目标buffer"""
         if product.product_type != "P3":
+            print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P1/P2产品 {product.id} 直接进入main_buffer")
             return "main"
         
         # P3产品的特殊逻辑：基于访问次数判断
         stationc_visits = product.visit_count.get("StationC", 0)
         
-        print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P3产品 {product.id} StationC访问次数={stationc_visits}")
+        print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P3产品 {product.id} StationC处理次数={stationc_visits}")
         
         if stationc_visits == 1:  # 第一次完成StationC处理
-            print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: P3产品 {product.id} 第一次处理完成，需要返工")
+            print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: P3产品 {product.id} 第一次在StationC处理完成，需要返工到StationB")
             return "upper"  # 返工到side buffer
         elif stationc_visits >= 2:  # 第二次及以后完成StationC处理
             print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id}: P3产品 {product.id} 第二次处理完成，继续主流程")
