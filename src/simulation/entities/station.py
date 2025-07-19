@@ -265,6 +265,12 @@ class Station(Device):
         """获取当前缓冲区产品数量"""
         return len(self.buffer.items)
 
+    def is_full(self):
+        return len(self.buffer.items) >= self.buffer_size
+    
+    def is_empty(self):
+        return len(self.buffer.items) == 0
+    
     def get_processing_stats(self) -> Dict:
         """获取工站处理统计信息"""
         return {
