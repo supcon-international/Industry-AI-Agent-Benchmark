@@ -193,9 +193,12 @@ class AGV(Vehicle):
             self.stats["total_distance"] += distance
             self.stats["tasks_completed"] += 1
             
-            # Report task completion to KPI calculator
+            # Report task completion, transport time, and energy cost to KPI calculator
             if self.kpi_calculator:
                 self.kpi_calculator.register_agv_task_complete(self.id)
+                self.kpi_calculator.update_agv_transport_time(self.id, travel_time)
+                # Add energy cost for AGV movement
+                self.kpi_calculator.add_energy_cost(f"AGV_{self.id}", travel_time, is_peak_hour=False)
             
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
             
@@ -448,6 +451,7 @@ class AGV(Vehicle):
             
         # move to charging point
         if self.current_point != self.charging_point:
+            # Note: move_to already records transport time to KPI
             yield self.env.process(self.move_to(self.charging_point))
             
         # start charging
@@ -471,6 +475,8 @@ class AGV(Vehicle):
             actual_charge_duration = self.env.now - self._charge_start_time
             is_active = getattr(self, '_is_active_charge', False)
             self.kpi_calculator.register_agv_charge(self.id, is_active, actual_charge_duration)
+            # Add energy cost for charging (charging typically uses more power)
+            self.kpi_calculator.add_energy_cost(f"AGV_{self.id}_charging", charge_time, is_peak_hour=False)
             # Clean up temporary attributes
             if hasattr(self, '_charge_start_time'):
                 del self._charge_start_time
@@ -528,10 +534,6 @@ class AGV(Vehicle):
         while True:
             # check every 5 seconds
             yield self.env.timeout(5.0)
-            
-            # Update transport time for KPI if moving
-            if self.status == DeviceStatus.MOVING and self.kpi_calculator:
-                self.kpi_calculator.update_agv_transport_time(self.id, 5.0)
             
             # if battery is low and not charging, start emergency charging
             if self.is_battery_low() and self.status != DeviceStatus.CHARGING:
@@ -604,6 +606,19 @@ class AGV(Vehicle):
         """Overrides the base method to publish status on change."""
         if self.status == new_status:
             return  # Avoid redundant publications
+        
+        # Track fault time for KPI
+        if self.kpi_calculator:
+            # If transitioning to FAULT status, record the start time
+            if new_status == DeviceStatus.FAULT and self.status != DeviceStatus.FAULT:
+                self._fault_start_time = self.env.now
+            # If transitioning from FAULT to any other status, record the fault duration
+            elif self.status == DeviceStatus.FAULT and new_status != DeviceStatus.FAULT:
+                if hasattr(self, '_fault_start_time'):
+                    fault_duration = self.env.now - self._fault_start_time
+                    self.kpi_calculator.update_agv_fault_time(self.id, fault_duration)
+                    del self._fault_start_time
+        
         super().set_status(new_status)
         self.publish_status(message)
 

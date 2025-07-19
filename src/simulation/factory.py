@@ -142,7 +142,8 @@ class Factory:
                 "position": conveyor_cfg['position'],
                 "interacting_points": conveyor_cfg['interacting_points'],
                 "transfer_time": conveyor_cfg['transfer_time'],
-                "mqtt_client": self.mqtt_client
+                "mqtt_client": self.mqtt_client,
+                "kpi_calculator": self.kpi_calculator
             }
             if conveyor_id == 'Conveyor_CQ':
                 conveyor = TripleBufferConveyor(

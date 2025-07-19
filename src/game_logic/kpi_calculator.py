@@ -414,7 +414,8 @@ class KPICalculator:
             total_time = current_time - fault_time - charge_time
             
             if total_time > 0:
-                agv_utilization[agv_id] = (transport_time / total_time * 100)
+                # Cap utilization at 100% to handle edge cases
+                agv_utilization[agv_id] = min(100.0, transport_time / total_time * 100)
             else:
                 agv_utilization[agv_id] = 0.0
         

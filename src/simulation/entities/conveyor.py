@@ -13,7 +13,7 @@ class Conveyor(BaseConveyor):
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, id, capacity, position: Tuple[int, int], interacting_points: list = [], transfer_time: float =5.0, mqtt_client=None):
+    def __init__(self, env, id, capacity, position: Tuple[int, int], interacting_points: list = [], transfer_time: float =5.0, mqtt_client=None, kpi_calculator=None):
         super().__init__(env, id, position, transfer_time, mqtt_client, interacting_points)
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
@@ -23,10 +23,18 @@ class Conveyor(BaseConveyor):
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
         self.product_start_times = {}  # Track when each product started transfer
+        self.kpi_calculator = kpi_calculator  # KPI calculator dependency
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
         self.publish_status()
+        
+        # Initialize device utilization tracking
+        if self.kpi_calculator:
+            self.kpi_calculator.update_device_utilization(self.id, 0.0)
+        
+        # Start background process to update total time for utilization calculation
+        self.env.process(self._update_total_time())
 
     def _determine_status(self):
         """根据当前状态确定传送带状态"""
@@ -89,6 +97,13 @@ class Conveyor(BaseConveyor):
         if self.buffer.items:
             return self.buffer.items[0]
         return None
+    
+    def _update_total_time(self):
+        """Background process to update total time for KPI utilization calculation"""
+        while True:
+            yield self.env.timeout(10.0)  # Update every 10 seconds
+            if self.kpi_calculator:
+                self.kpi_calculator.update_device_utilization(self.id, self.env.now)
 
     def run(self):
         """Main operational loop for the conveyor. This should NOT be interrupted by faults."""
@@ -166,7 +181,13 @@ class Conveyor(BaseConveyor):
                 print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 开始传输，需要 {remaining_time:.1f}s")
             
             # 进行timeout（模拟搬运时间）
+            # Track start of working time for KPI
+            working_start_time = self.env.now
             yield self.env.timeout(remaining_time)
+            
+            # Report energy cost for this transfer
+            if self.kpi_calculator:
+                self.kpi_calculator.add_energy_cost(self.id, remaining_time, is_peak_hour=False)
             
             # 然后从buffer获取产品（get）
             actual_product = yield self.buffer.get()
@@ -240,11 +261,12 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None, interacting_points: list = []):
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None, interacting_points: list = [], kpi_calculator=None):
         super().__init__(env, id, position, transfer_time, mqtt_client, interacting_points)
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
+        self.kpi_calculator = kpi_calculator  # KPI calculator dependency
         self.downstream_station = None  # QualityCheck
         self.action = None  # 保留但不使用，兼容 fault system 接口
         self.transfer_time = transfer_time # 模拟搬运时间
@@ -255,6 +277,13 @@ class TripleBufferConveyor(BaseConveyor):
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
         self.publish_status()
+        
+        # Initialize device utilization tracking
+        if self.kpi_calculator:
+            self.kpi_calculator.update_device_utilization(self.id, 0.0)
+        
+        # Start background process to update total time for utilization calculation
+        self.env.process(self._update_total_time())
 
     def _determine_status(self):
         """根据当前状态确定传送带状态"""
@@ -404,7 +433,13 @@ class TripleBufferConveyor(BaseConveyor):
             target_buffer = self._determine_target_buffer_for_product(product)
             
             # 先进行timeout（模拟搬运时间）
+            # Track start of working time for KPI
+            working_start_time = self.env.now
             yield self.env.timeout(self.transfer_time)
+            
+            # Report energy cost for this transfer
+            if self.kpi_calculator:
+                self.kpi_calculator.add_energy_cost(self.id, self.transfer_time, is_peak_hour=False)
             
             # 获取产品
             actual_product = yield self.main_buffer.get()
@@ -489,6 +524,13 @@ class TripleBufferConveyor(BaseConveyor):
         """Custom recovery logic for the TripleBufferConveyor."""
         print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id} is recovering.")
         # 恢复后，它应该继续工作，而不是空闲
+    
+    def _update_total_time(self):
+        """Background process to update total time for KPI utilization calculation"""
+        while True:
+            yield self.env.timeout(10.0)  # Update every 10 seconds
+            if self.kpi_calculator:
+                self.kpi_calculator.update_device_utilization(self.id, self.env.now)
         self.set_status(DeviceStatus.WORKING)
         
     def interrupt_all_processing(self):
