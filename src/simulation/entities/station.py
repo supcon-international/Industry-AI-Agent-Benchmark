@@ -60,6 +60,7 @@ class Station(Device):
         self.current_product_id = None  # 当前正在处理的产品ID
         self.current_product_start_time = None  # 当前产品开始处理的时间
         self.current_product_total_time = None  # 当前产品需要的总处理时间
+        self.current_product_elapsed_time = None  # 中断前已经处理的累计时间
         
         # Start the main operational process for the station
         self.env.process(self.run())
@@ -147,17 +148,20 @@ class Station(Device):
             
             # 处理中断恢复的逻辑
             if (self.current_product_id == product.id and 
-                self.current_product_start_time is not None and 
+                self.current_product_elapsed_time is not None and
                 self.current_product_total_time is not None):
-                # 如果之前已经开始处理，计算剩余时间
-                elapsed_time = self.env.now - self.current_product_start_time
+                # 恢复处理：使用之前记录的已处理时间
+                elapsed_time = self.current_product_elapsed_time
                 remaining_time = max(0, self.current_product_total_time - elapsed_time)
                 print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 恢复处理，已处理 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                # 重新记录开始时间，但保留累计时间和总时间
+                self.current_product_start_time = self.env.now
             else:
                 # 第一次开始处理
                 self.current_product_id = product.id
                 self.current_product_start_time = self.env.now
                 self.current_product_total_time = actual_processing_time
+                self.current_product_elapsed_time = 0  # 初始化累计时间
                 remaining_time = actual_processing_time
                 print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 开始处理，需要 {actual_processing_time:.1f}s")
             
@@ -186,17 +190,26 @@ class Station(Device):
         except simpy.Interrupt as e:
             message = f"Processing of product {product.id} was interrupted: {e.cause}"
             print(f"[{self.env.now:.2f}] ⚠️ {self.id}: {message}")
+            
+            # 记录中断时已经处理的时间
+            if self.current_product_start_time is not None:
+                elapsed_before_interrupt = self.env.now - self.current_product_start_time
+                self.current_product_elapsed_time = (self.current_product_elapsed_time or 0) + elapsed_before_interrupt
+                print(f"[{self.env.now:.2f}] 💾 {self.id}: 产品 {product.id} 中断前已处理 {elapsed_before_interrupt:.1f}s，累计 {self.current_product_elapsed_time:.1f}s")
+                # 清理开始时间，但保留其他记录
+                self.current_product_start_time = None
+            
             if product not in self.buffer.items:
                 # 产品已取出，说明处理时间已经完成，应该继续流转
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
                 yield self.env.process(self._transfer_product_to_next_stage(product))
-                # 清理时间记录
+                # 清理所有时间记录
                 self.current_product_id = None
                 self.current_product_start_time = None
                 self.current_product_total_time = None
+                self.current_product_elapsed_time = None
             else:
                 # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
-                # 不清理时间记录，以便恢复时可以继续
                 print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
         finally:
             # Clear the action handle once the process is complete or interrupted
@@ -206,6 +219,7 @@ class Station(Device):
                 self.current_product_id = None
                 self.current_product_start_time = None
                 self.current_product_total_time = None
+                self.current_product_elapsed_time = None
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
@@ -272,6 +286,7 @@ class Station(Device):
                 self.current_product_id = None
                 self.current_product_start_time = None
                 self.current_product_total_time = None
+                self.current_product_elapsed_time = None
         
         # 恢复后，设置为IDLE状态
         self.set_status(DeviceStatus.IDLE)
