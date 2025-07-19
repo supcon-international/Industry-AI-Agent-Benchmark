@@ -142,6 +142,7 @@ class FaultSystem:
             device.action.interrupt("Fault injected")
         
         device.set_status(DeviceStatus.FAULT)
+        device.publish_status(f"[{self.env.now:.2f}] {device_id}: Fault injected: {fault.symptom}")
         
         # If the device has a fault symptom attribute, set it
         if hasattr(device, 'fault_symptom'):

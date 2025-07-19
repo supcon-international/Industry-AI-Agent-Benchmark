@@ -22,6 +22,12 @@ class Station(Device):
             to a tuple of (min_time, max_time) for processing.
         product_transfer_callback (Callable): Callback function to transfer products to next station
         downstream_conveyor (Conveyor): The conveyor downstream from this station
+
+        # For fault system to record the current product for resume processing
+        current_product_id (str): The ID of the current product being processed.
+        current_product_start_time (float): The time when the current product started processing.
+        current_product_total_time (float): The total time required to process the current product.
+        current_product_elapsed_time (float): The elapsed time before the current product was interrupted.
     """
     
     def __init__(
@@ -66,16 +72,9 @@ class Station(Device):
         self.env.process(self.run())
         
         # Publish initial status
-        self.publish_status()
+        self.publish_status("Station initialized")
 
-    def set_status(self, new_status: DeviceStatus, message: Optional[str] = None):
-        """Overrides the base method to publish status on change."""
-        if self.status == new_status:
-            return
-        super().set_status(new_status, message)
-        self.publish_status(message)
-
-    def publish_status(self, message: Optional[str] = None):  # noqa: ARG002
+    def publish_status(self, message: Optional[str] = None):
         """Publishes the current status of the station to MQTT."""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
@@ -84,6 +83,7 @@ class Station(Device):
             timestamp=self.env.now,
             source_id=self.id,
             status=self.status,
+            message=message,
             buffer=[p.id for p in self.buffer.items],
             stats=self.stats,
             output_buffer=[]  # 普通工站没有 output_buffer
@@ -133,18 +133,17 @@ class Station(Device):
         try:
             # Check if the device can operate
             if not self.can_operate():
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
+                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not process product, device is not available"
+                print(msg)
+                self.publish_status(msg)
                 return
 
             self.set_status(DeviceStatus.PROCESSING)
+            self.publish_status()
 
             # Record processing start and get processing time
             min_time, max_time = self.processing_times.get(product.product_type, (10, 20))
             processing_time = random.uniform(min_time, max_time)
-            
-            # Apply efficiency and fault impacts
-            efficiency_factor = getattr(self.performance_metrics, 'efficiency_rate', 100.0) / 100.0
-            actual_processing_time = processing_time / efficiency_factor
             
             # 处理中断恢复的逻辑
             if (self.current_product_id == product.id and 
@@ -153,17 +152,21 @@ class Station(Device):
                 # 恢复处理：使用之前记录的已处理时间
                 elapsed_time = self.current_product_elapsed_time
                 remaining_time = max(0, self.current_product_total_time - elapsed_time)
-                print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 恢复处理，已处理 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                msg = f"[{self.env.now:.2f}] {self.id}: {product.id} resume processing, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
                 # 重新记录开始时间，但保留累计时间和总时间
                 self.current_product_start_time = self.env.now
             else:
                 # 第一次开始处理
                 self.current_product_id = product.id
                 self.current_product_start_time = self.env.now
-                self.current_product_total_time = actual_processing_time
+                self.current_product_total_time = processing_time
                 self.current_product_elapsed_time = 0  # 初始化累计时间
-                remaining_time = actual_processing_time
-                print(f"[{self.env.now:.2f}] {self.id}: 产品 {product.id} 开始处理，需要 {actual_processing_time:.1f}s")
+                remaining_time = processing_time
+                msg = f"[{self.env.now:.2f}] {self.id}: {product.id} start processing, need {processing_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
             
             # The actual processing work
             yield self.env.timeout(remaining_time)
@@ -172,17 +175,18 @@ class Station(Device):
 
             # Update statistics upon successful completion
             self.stats["products_processed"] += 1
-            self.stats["total_processing_time"] += actual_processing_time
+            self.stats["total_processing_time"] += processing_time
             self.stats["average_processing_time"] = (
                 self.stats["total_processing_time"] / self.stats["products_processed"]
             )
             
-            # Processing finished successfully
-            print(f"[{self.env.now:.2f}] {self.id}: Finished processing product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
-            
             # Set to IDLE now, as core processing is done.
             # The subsequent transfer is a separate action performed while IDLE.
             self.set_status(DeviceStatus.IDLE)
+            # Processing finished successfully
+            msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished processing, actual processing time {processing_time:.1f}s"
+            print(msg)
+            self.publish_status(msg)
             
             # Trigger moving the product to the next stage
             yield self.env.process(self._transfer_product_to_next_stage(product))
@@ -230,18 +234,21 @@ class Station(Device):
         
         # Set status to INTERACTING before the potentially blocking push operation
         self.set_status(DeviceStatus.INTERACTING)
+        self.publish_status()
 
         # normal conveyor - SimPy push()会自动阻塞直到有空间
         yield self.downstream_conveyor.push(product)
         
         # Set status back to IDLE after the push operation is complete
         self.set_status(DeviceStatus.IDLE)
+        self.publish_status()
         return
 
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer, wrapped in INTERACTING state."""
         success = False
         self.set_status(DeviceStatus.INTERACTING)
+        self.publish_status()
         try:
             yield self.buffer.put(product)
             print(f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer.")
@@ -251,6 +258,7 @@ class Station(Device):
             success = False
         finally:
             self.set_status(DeviceStatus.IDLE)
+            self.publish_status()
         return success
 
     def get_buffer_level(self) -> int:
@@ -276,8 +284,6 @@ class Station(Device):
     
     def recover(self):
         """Custom recovery logic for the station."""
-        print(f"[{self.env.now:.2f}] ✅ Station {self.id} is recovering.")
-        
         # 清理不在buffer中的产品的时间记录
         if self.current_product_id:
             products_in_buffer = {p.id for p in self.buffer.items}
@@ -290,4 +296,7 @@ class Station(Device):
         
         # 恢复后，设置为IDLE状态
         self.set_status(DeviceStatus.IDLE)
+        msg = f"[{self.env.now:.2f}] ✅ Station {self.id} is recovered."
+        print(msg)
+        self.publish_status(msg)
 

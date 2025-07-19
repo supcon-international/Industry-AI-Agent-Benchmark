@@ -104,6 +104,7 @@ class StationStatus(BaseModel):
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the station (e.g., 'Station_A').")
     status: DeviceStatus = Field(..., description="Current status of the station.")
+    message: Optional[str] = Field(None, description="Current action message, e.g., 'emergency charging', 'voluntary charging', 'moving to P1'.")
     buffer: List[str] = Field(..., description="List of product IDs in the buffer.")
     stats: Dict[str, Any] = Field(..., description="Statistics of the station.")
     # Optional fields, primarily for QualityChecker
@@ -131,6 +132,7 @@ class ConveyorStatus(BaseModel):
     timestamp: float = Field(..., description="Simulation timestamp of the status update.")
     source_id: str = Field(..., description="ID of the conveyor (e.g., 'Conveyor_1').")
     status: DeviceStatus = Field(..., description="Current status of the conveyor.")
+    message: Optional[str] = Field(None, description="Current action message, e.g., 'emergency charging', 'voluntary charging', 'moving to P1'.")
     # For TripleBufferConveyor, buffer is the main buffer
     buffer: List[str] = Field(..., description="List of product IDs in the buffer.")
     # Only for TripleBufferConveyor

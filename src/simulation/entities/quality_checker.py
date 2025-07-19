@@ -80,7 +80,8 @@ class QualityChecker(Station):
             status=self.status,
             buffer=[p.id for p in self.buffer.items],
             stats=self.stats,
-            output_buffer=[p.id for p in self.output_buffer.items]
+            output_buffer=[p.id for p in self.output_buffer.items],
+            message=message,
         )
         topic = get_station_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
@@ -92,10 +93,13 @@ class QualityChecker(Station):
         try:
             # Check if the device can operate
             if not self.can_operate():
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法处理产品，设备不可用")
+                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not process product, device is not available"
+                print(msg)
+                self.publish_status(msg)
                 return
 
             self.set_status(DeviceStatus.PROCESSING)
+            self.publish_status()
 
             # Record processing start and get processing time
             min_time, max_time = self.processing_times.get(product.product_type, (10, 15))
@@ -105,7 +109,9 @@ class QualityChecker(Station):
             efficiency_factor = getattr(self.performance_metrics, 'efficiency_rate', 100.0) / 100.0
             actual_processing_time = processing_time / efficiency_factor
             
-            print(f"[{self.env.now:.2f}] 🔍 {self.id}: 检测产品中... (预计{actual_processing_time:.1f}s)")
+            msg = f"[{self.env.now:.2f}] 🔍 {self.id}: 检测产品中... (预计{actual_processing_time:.1f}s)"
+            print(msg)
+            self.publish_status(msg)
             
             # The actual processing work (timeout-get pattern like Station)
             yield self.env.timeout(actual_processing_time)
@@ -122,11 +128,12 @@ class QualityChecker(Station):
             # Perform quality inspection
             decision = self._make_simple_decision(product)
             
-            # Processing finished successfully
-            print(f"[{self.env.now:.2f}] {self.id}: Finished inspecting product {product.id} (实际耗时: {actual_processing_time:.1f}s)")
-            
             # Set to IDLE now, as core processing is done.
             self.set_status(DeviceStatus.IDLE)
+            # Processing finished successfully
+            msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished inspecting, actual processing time: {actual_processing_time:.1f}s"
+            print(msg)
+            self.publish_status(msg)
             
             # Execute decision (equivalent to transfer_product_to_next_stage)
             yield self.env.process(self._execute_quality_decision(product, decision))
@@ -149,10 +156,13 @@ class QualityChecker(Station):
         """Execute quality decision (equivalent to _transfer_product_to_next_stage)"""
         # Set status to INTERACTING before the potentially blocking operations
         self.set_status(DeviceStatus.INTERACTING)
+        self.publish_status()
         
         if decision == SimpleDecision.PASS:
             self.stats["passed_count"] += 1
-            print(f"[{self.env.now:.2f}] ✅ {self.id}: 产品 {product.id} 通过检测")
+            msg = f"[{self.env.now:.2f}] ✅ {self.id}: {product.id} passed quality inspection"
+            print(msg)
+            self.publish_status(msg)
             
             # Check if output buffer is full and report if needed
             if len(self.output_buffer.items) >= self.output_buffer_capacity:
@@ -164,7 +174,10 @@ class QualityChecker(Station):
             
         elif decision == SimpleDecision.SCRAP:
             self.stats["scrapped_count"] += 1
-            self.set_status(DeviceStatus.SCRAP, message="产品报废")
+
+            msg = f"[{self.env.now:.2f}] ❌ {self.id}: {product.id} scrapped"
+            print(msg)
+            self.publish_status(msg)
             yield self.env.process(self._handle_product_scrap(product, "quality_inspection_failed"))
             
         elif decision == SimpleDecision.REWORK:
@@ -172,22 +185,24 @@ class QualityChecker(Station):
             # 返工：回到最后一个加工工站
             last_station = self._get_last_processing_station(product)
             if last_station:
-                product.start_rework(self.env.now, last_station)
-                print(f"[{self.env.now:.2f}] 🔄 {self.id}: 产品 {product.id} 返工到 {last_station}")
-                
                 # 检查output buffer是否满
                 if len(self.output_buffer.items) >= self.output_buffer_capacity:
                     self.report_buffer_full("output_buffer")
                 
                 # 将返工产品放入output buffer，等待AGV运送
                 yield self.output_buffer.put(product)
-                print(f"[{self.env.now:.2f}] 📦 {self.id}: 返工产品 {product.id} 放入output buffer，等待AGV运送到 {last_station}")
+                msg = f"[{self.env.now:.2f}] 📦 {self.id}: {product.id} reworked to {last_station}, put into output buffer, waiting for AGV to deliver"
+                print(msg)
+                self.publish_status(msg)
             else:
-                print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 无法确定返工工站，产品报废")
+                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not determine rework station, product scrapped"
+                print(msg)
+                self.publish_status(msg)
                 yield self.env.process(self._handle_product_scrap(product, "rework_failed"))
         
         # Set status back to IDLE after the operation is complete
         self.set_status(DeviceStatus.IDLE)
+        self.publish_status()
 
     def _handle_product_scrap(self, product, reason: str):
         """Handle product scrapping due to quality issues"""
@@ -195,8 +210,6 @@ class QualityChecker(Station):
         # Set product status to scrapped
         product.quality_score = 0.0
         product.quality_status = QualityStatus.SCRAP
-        
-        print(f"[{self.env.now:.2f}] ❌ {self.id}: 产品 {product.id} 因{reason}报废")
         
         # Report scrapped product through base class
         self.report_device_error("product_scrap", f"Product {product.id} scrapped due to {reason}")

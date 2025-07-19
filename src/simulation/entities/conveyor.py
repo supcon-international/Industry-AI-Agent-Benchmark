@@ -27,26 +27,23 @@ class Conveyor(BaseConveyor):
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
-        self.publish_status()
+        self.publish_status("Conveyor initialized")
 
     def _should_be_blocked(self):
         """检查传送带是否应该处于阻塞状态"""
         return self.is_full() and self.downstream_station and not self.downstream_station.can_operate()
 
-    def publish_status(self, **kwargs):
+    def publish_status(self, message: Optional[str] = None):
         """直接发布传送带状态，不通过set_status"""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
-
-        # 实时确定状态
-        # current_status = self._determine_status()
-        # self.status = current_status
 
         status_data = ConveyorStatus(
             timestamp=self.env.now,
             source_id=self.id,
             status=self.status,
             buffer=[p.id for p in self.buffer.items],
+            message=message,
             upper_buffer=None,
             lower_buffer=None
         )
@@ -145,24 +142,30 @@ class Conveyor(BaseConveyor):
                 # 发布blocked状态
                 if self.status != DeviceStatus.BLOCKED and self.can_operate():
                     self.set_status(DeviceStatus.BLOCKED)
+                    self.publish_status()
                 yield self.env.timeout(1.0)  # wait before retrying
             
             # 恢复工作状态, 但只有在之前是BLOCKED且设备可操作时才恢复
             if self.status == DeviceStatus.BLOCKED and self.can_operate():
                 self.set_status(DeviceStatus.WORKING)
+                self.publish_status()
             
             # 计算剩余传输时间（处理中断后恢复的情况）
             if product.id in self.product_elapsed_times:
                 # 恢复传输：使用之前记录的已传输时间
                 elapsed_time = self.product_elapsed_times[product.id]
                 remaining_time = max(0, self.transfer_time - elapsed_time)
-                print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 恢复传输，已传输 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                msg = f"[{self.env.now:.2f}] Conveyor {self.id}: {product.id} resume transferring, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
                 self.product_start_times[product.id] = self.env.now
             else:
                 # 第一次开始传输
                 self.product_start_times[product.id] = self.env.now
                 remaining_time = self.transfer_time
-                print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 开始传输，需要 {remaining_time:.1f}s")
+                msg = f"[{self.env.now:.2f}] Conveyor {self.id}: {product.id} start transferring, need {remaining_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
             
             # 进行timeout（模拟搬运时间）
             yield self.env.timeout(remaining_time)
@@ -173,7 +176,9 @@ class Conveyor(BaseConveyor):
             if actual_product.id != product.id:
                 # 如果不是预期的产品，放回去
                 yield self.buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] Conveyor {self.id}: unexpected product order, retrying")
+                msg = f"[{self.env.now:.2f}] Conveyor {self.id}: unexpected product order, retrying"
+                print(msg)
+                self.publish_status(msg)
                 return
             
             self.publish_status()
@@ -181,15 +186,10 @@ class Conveyor(BaseConveyor):
             # 先将产品放入下游（put）
             yield self.downstream_station.buffer.put(actual_product)
             
-            # put成功后更新产品位置信息
-            if hasattr(actual_product, 'update_location'):
-                actual_product.update_location(self.downstream_station.id, self.env.now)
-            else:
-                # 兼容没有update_location方法的产品
-                actual_product.current_location = self.downstream_station.id
-                actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
-            
-            print(f"[{self.env.now:.2f}] Conveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
+            actual_product.update_location(self.downstream_station.id, self.env.now)
+            msg = f"[{self.env.now:.2f}] Conveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}"
+            print(msg)
+            self.publish_status(msg)
             
             # 清理传输时间记录
             if actual_product.id in self.product_start_times:
@@ -215,14 +215,13 @@ class Conveyor(BaseConveyor):
                 print(f"[{self.env.now:.2f}] 🔄 Conveyor {self.id}: Product {actual_product.id} returned to buffer")
             # 不清理 product_start_times，以便恢复时可以继续
             self.set_status(DeviceStatus.FAULT)
+            self.publish_status()
             
         finally:
             self.publish_status()
 
     def recover(self):
         """Custom recovery logic for the conveyor."""
-        print(f"[{self.env.now:.2f}] ✅ Conveyor {self.id} is recovering.")
-        
         # 清理不在buffer中的产品的时间记录
         products_in_buffer = {p.id for p in self.buffer.items}
         
@@ -240,6 +239,9 @@ class Conveyor(BaseConveyor):
         
         # 恢复后，它应该继续工作，而不是空闲
         self.set_status(DeviceStatus.WORKING)
+        msg = f"[{self.env.now:.2f}] ✅ Conveyor {self.id} is recovered."
+        print(msg)
+        self.publish_status(msg)
         
     def interrupt_all_processing(self):
         """Interrupt all active product processing. Called by fault system."""
@@ -274,14 +276,14 @@ class TripleBufferConveyor(BaseConveyor):
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
-        self.publish_status()
+        self.publish_status("Conveyor initialized")
 
     def _should_be_blocked(self):
         """检查三缓冲传送带是否应该处于阻塞状态"""
         # 所有缓冲区都满才算真正阻塞
         return self.is_full("main") and self.is_full("upper") and self.is_full("lower") and self.downstream_station and not self.downstream_station.can_operate()
 
-    def publish_status(self, **kwargs):
+    def publish_status(self, message: Optional[str] = None):
         """发布当前传送带状态到MQTT"""
         if not self.mqtt_client or not self.mqtt_client.is_connected():
             return
@@ -294,6 +296,7 @@ class TripleBufferConveyor(BaseConveyor):
             buffer=[p.id for p in self.main_buffer.items],
             upper_buffer=[p.id for p in self.upper_buffer.items],
             lower_buffer=[p.id for p in self.lower_buffer.items],
+            message=message,
         )
         topic = get_conveyor_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
@@ -406,11 +409,13 @@ class TripleBufferConveyor(BaseConveyor):
                 # 发布blocked状态
                 if self.status != DeviceStatus.BLOCKED and self.can_operate():
                     self.set_status(DeviceStatus.BLOCKED)
+                    self.publish_status()
                 yield self.env.timeout(1.0)  # wait before retrying
             
             # 恢复工作状态, 但只有在之前是BLOCKED且设备可操作时才恢复
             if self.can_operate():
                 self.set_status(DeviceStatus.WORKING)
+                self.publish_status()
 
             # 使用Product的智能路由决策
             target_buffer = self._determine_target_buffer_for_product(product)
@@ -420,7 +425,9 @@ class TripleBufferConveyor(BaseConveyor):
                 # 恢复传输：使用之前记录的已传输时间
                 elapsed_time = self.product_elapsed_times[product.id]
                 remaining_time = max(0, self.transfer_time - elapsed_time)
-                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: 产品 {product.id} 恢复传输，已传输 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: {product.id} resume transferring, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
                 # 清除elapsed记录，重新记录开始时间
                 del self.product_elapsed_times[product.id]
                 self.product_start_times[product.id] = self.env.now
@@ -428,7 +435,9 @@ class TripleBufferConveyor(BaseConveyor):
                 # 第一次开始传输
                 self.product_start_times[product.id] = self.env.now
                 remaining_time = self.transfer_time
-                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: 产品 {product.id} 开始传输，需要 {remaining_time:.1f}s")
+                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: {product.id} start transferring, need {remaining_time:.1f}s"
+                print(msg)
+                self.publish_status(msg)
             
             # 进行timeout（模拟搬运时间）
             yield self.env.timeout(remaining_time)
@@ -440,7 +449,9 @@ class TripleBufferConveyor(BaseConveyor):
             if actual_product.id != product.id:
                 # 如果不是预期的产品，放回去
                 yield self.main_buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: unexpected product order, retrying")
+                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: unexpected product order, retrying"
+                print(msg)
+                self.publish_status(msg)
                 return
             
             self.publish_status()
@@ -534,6 +545,7 @@ class TripleBufferConveyor(BaseConveyor):
         print(f"[{self.env.now:.2f}] ✅ TripleBufferConveyor {self.id} is recovering.")
         # 恢复后，它应该继续工作，而不是空闲
         self.set_status(DeviceStatus.WORKING)
+        self.publish_status()
         
     def interrupt_all_processing(self):
         """Interrupt all active product processing. Called by fault system."""
