@@ -121,6 +121,12 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory):
                 except (ValueError, KeyError) as e:
                     print(f"输入无效: {e}！")
                     continue
+                try:
+                    if not fault_type:
+                        raise ValueError("无效的故障类型")
+                except (ValueError, KeyError) as e:
+                    print(f"输入无效: {e}！")
+                    continue
             
             factory.fault_system._inject_fault_now(device_id, fault_type, fault_duration)
             print(f"已注入故障: {device_id} {fault_type.name} {fault_duration}s")

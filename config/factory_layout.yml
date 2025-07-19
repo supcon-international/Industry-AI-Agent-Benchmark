@@ -11,12 +11,12 @@ stations:
     # name: "组装工站"
     position: [15, 20]
     buffer_size: 3
-    processing_times:  # 产品类型: [最小时间, 最大时间] (秒)
+    processing_times: # 产品类型: [最小时间, 最大时间] (秒)
       P1: [5, 5] #[30, 45]
       P2: [5, 5] #[40, 60]
       P3: [5, 5] #[35, 50]
     interacting_points: [P1]
-    
+
   - id: "StationB"
     # name: "焊接工站"
     position: [35, 20]
@@ -26,7 +26,7 @@ stations:
       P2: [5, 5] #[60, 80]
       P3: [5, 5] #[50, 70]
     interacting_points: [P3]
-    
+
   - id: "StationC"
     # name: "测试工站"
     position: [55, 20]
@@ -36,7 +36,7 @@ stations:
       P2: [5, 5] #[30, 40]
       P3: [5, 5] #[25, 35]
     interacting_points: [P5]
-    
+
   - id: "QualityCheck"
     # name: "质量检测站"
     position: [75, 20]
@@ -53,25 +53,25 @@ agvs:
   - id: "AGV_1"
     position: [10, 10] # initial position
     path_points:
-      P0: [5, 15]  # raw material warehouse
+      P0: [5, 15] # raw material warehouse
       P1: [12, 15] # StationA
       P2: [25, 15] # Conveyor_AB
       P3: [32, 15] # StationB
       P4: [45, 15] # Conveyor_BC
-      P5: [52, 15] # StationC 
+      P5: [52, 15] # StationC
       P6: [65, 10] # Conveyor_CQ_lower
       P7: [72, 15] # QualityChecker
       P8: [80, 15] # QualityChecker_output
       P9: [95, 15] # Warehouse
       P10: [10, 10] # Charging Area
-    speed_mps: 2.0  # 移动速度 (米/秒)
-    payload_capacity: 2  # 最大载货数量
-    low_battery_threshold: 5.0  # 低电量阈值
-    charging_point: P10  # 充电点坐标
-    charging_speed: 3.33  # 充电速度(30秒充满)
-    battery_consumption_per_meter: 0.1  # 每米消耗0.1%电量
-    battery_consumption_per_action: 0.5  # 每次操作消耗0.5%电量
-    
+    speed_mps: 2.0 # 移动速度 (米/秒)
+    payload_capacity: 2 # 最大载货数量
+    low_battery_threshold: 5.0 # 低电量阈值
+    charging_point: P10 # 充电点坐标
+    charging_speed: 3.33 # 充电速度(30秒充满)
+    battery_consumption_per_meter: 0.1 # 每米消耗0.1%电量
+    battery_consumption_per_action: 0.5 # 每次操作消耗0.5%电量
+
   - id: "AGV_2"
     position: [10, 30]
     path_points:
@@ -126,7 +126,7 @@ warehouses:
 
 # 订单生成器配置
 order_generator:
-  generation_interval_range: [10, 10]  # 最小/最大间隔 (秒)
+  generation_interval_range: [10, 10] # 最小/最大间隔 (秒)
   quantity_weights:
     1: 0.40
     2: 0.30
@@ -152,8 +152,8 @@ order_generator:
 
 # 故障系统参数
 fault_system:
-  fault_injection_interval: [120, 180]  # 故障注入间隔 (2-3分钟)
-  auto_recovery_time: [600, 1800]  # 自动恢复时间 (10-30分钟)
+  fault_injection_interval: [120, 180] # 故障注入间隔 (2-3分钟)
+  auto_recovery_time: [600, 1800] # 自动恢复时间 (10-30分钟)
   device_relationships:
     StationA: ["StationB", "AGV_1"]
     StationB: ["StationA", "StationC", "AGV_1", "AGV_2"]
@@ -164,12 +164,40 @@ fault_system:
 
 # KPI计算权重
 kpi_weights:
-  production_efficiency: 0.40  # 生产效率 40%
-  cost_control: 0.30           # 成本控制 30%
-  robustness: 0.30             # 鲁棒性 30%
+  production_efficiency: 0.40 # 生产效率 40%
+  quality_cost: 0.30 # 质量与成本 30%
+  agv_efficiency: 0.30 # AGV操控效率 30%
+  
+  # 生产效率子权重 (总和应为1.0)
+  efficiency_components:
+    order_completion: 0.40    # 订单完成率权重
+    production_cycle: 0.40    # 生产周期效率权重
+    device_utilization: 0.20  # 设备利用率权重
+  
+  # 质量成本子权重 (总和应为1.0)
+  quality_cost_components:
+    first_pass_rate: 0.40     # 一次通过率权重
+    cost_efficiency: 0.60     # 成本效率权重
+  
+  # AGV效率子权重 (总和应为1.0)
+  agv_components:
+    charge_strategy: 0.30     # 充电策略效率权重
+    energy_efficiency: 0.40   # 能效比权重
+    utilization: 0.30         # AGV利用率权重
+
+# KPI成本参数
+kpi_costs:
+  material_cost_per_product:
+    P1: 10.0
+    P2: 15.0
+    P3: 20.0
+  energy_cost_per_second: 0.1
+  energy_cost_multiplier_peak: 1.5
+  maintenance_cost_base: 50.0
+  scrap_cost_multiplier: 0.8
 
 # 系统性能参数
 system:
-  status_publish_interval: 10.0  # 状态发布间隔 (秒)
-  simulation_step_size: 0.1      # 仿真步长 (秒)
-  max_concurrent_orders: 20      # 最大并发订单数 
+  status_publish_interval: 10.0 # 状态发布间隔 (秒)
+  simulation_step_size: 0.1 # 仿真步长 (秒)
+  max_concurrent_orders: 20 # 最大并发订单数

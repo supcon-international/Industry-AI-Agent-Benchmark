@@ -164,6 +164,10 @@ class QualityChecker(Station):
             print(msg)
             self.publish_status(msg)
             
+            # Report to KPI calculator
+            if hasattr(self, 'kpi_calculator') and self.kpi_calculator:
+                self.kpi_calculator.complete_order_item(product.order_id, product.product_type, passed_quality=True)
+            
             # Check if output buffer is full and report if needed
             if len(self.output_buffer.items) >= self.output_buffer_capacity:
                 self.report_buffer_full("output_buffer")
@@ -178,6 +182,12 @@ class QualityChecker(Station):
             msg = f"[{self.env.now:.2f}] ❌ {self.id}: {product.id} scrapped"
             print(msg)
             self.publish_status(msg)
+            self.set_status(DeviceStatus.SCRAP, message="Product scrapped")
+            
+            # Report to KPI calculator
+            if hasattr(self, 'kpi_calculator') and self.kpi_calculator:
+                self.kpi_calculator.complete_order_item(product.order_id, product.product_type, passed_quality=False)
+            
             yield self.env.process(self._handle_product_scrap(product, "quality_inspection_failed"))
             
         elif decision == SimpleDecision.REWORK:

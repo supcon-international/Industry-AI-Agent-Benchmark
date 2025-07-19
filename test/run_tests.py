@@ -31,12 +31,16 @@ def show_menu():
     print("  4. 性能基准测试 (test_performance_benchmark.py)")
     print("     评估系统性能和资源使用情况")
     print()
+    print("📊 KPI系统测试:")
+    print("  5. KPI计算系统测试 (test_kpi_system.py)")
+    print("     验证KPI计算是否符合PRD 2.8要求 (新！)")
+    print()
     print("🚀 完整测试:")
-    print("  5. 运行所有自动化测试 (1, 3, 4)")
+    print("  6. 运行所有自动化测试 (1, 3, 4, 5)")
     print("     完整的系统验证 (不包括交互式测试)")
     print()
     print("📊 系统信息:")
-    print("  6. 显示系统状态和配置信息")
+    print("  7. 显示系统状态和配置信息")
     print()
     print("  0. 退出")
     print()
@@ -85,7 +89,8 @@ def run_all_automated_tests():
     tests = [
         ("test_factory_simulation.py", "基础功能测试"),
         ("test_fault_diagnosis_demo.py", "故障诊断系统演示"),
-        ("test_performance_benchmark.py", "性能基准测试")
+        ("test_performance_benchmark.py", "性能基准测试"),
+        ("test_kpi_system.py", "KPI计算系统测试")
     ]
     
     results = []
@@ -217,8 +222,10 @@ def main():
             elif choice == "4":
                 run_test_script("test_performance_benchmark.py", "性能基准测试")
             elif choice == "5":
-                run_all_automated_tests()
+                run_test_script("test_kpi_system.py", "KPI计算系统测试")
             elif choice == "6":
+                run_all_automated_tests()
+            elif choice == "7":
                 show_system_info()
             elif choice == "0":
                 print("\n👋 感谢使用SUPCON工厂仿真系统测试套件!")

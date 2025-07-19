@@ -26,10 +26,11 @@ class FaultSystem:
     简化的故障系统：冻结设备，过一段时间解冻
     """
     
-    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, **kwargs):
+    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, kpi_calculator=None, **kwargs):
         self.env = env
         self.factory_devices = devices
         self.mqtt_client = mqtt_client
+        self.kpi_calculator = kpi_calculator
         self.active_faults: Dict[str, 'SimpleFault'] = {}
         self.fault_processes: Dict[str, simpy.Process] = {}
         self.pending_agv_faults: Dict[str, FaultType] = {} # 新增：用于挂起对繁忙AGV的故障
@@ -155,6 +156,11 @@ class FaultSystem:
         
         self._send_fault_alert(device_id, fault)
         
+        # Report maintenance cost to KPI calculator (fault detection)
+        if self.kpi_calculator:
+            # Assume correct diagnosis for auto-generated faults
+            self.kpi_calculator.add_maintenance_cost(device_id, fault.symptom, was_correct_diagnosis=True)
+        
         # Start fault process
         fault_process = self.env.process(self._run_fault_process(fault))
         self.fault_processes[device_id] = fault_process
@@ -188,7 +194,11 @@ class FaultSystem:
     def _clear_fault(self, device_id: str):
         """Clear the fault and unfreeze the device"""
         if device_id in self.active_faults:
-            fault_symptom = self.active_faults[device_id].symptom
+            fault = self.active_faults[device_id]
+            fault_symptom = fault.symptom
+            # Calculate recovery time before deleting the fault
+            recovery_time = self.env.now - fault.start_time
+            
             del self.active_faults[device_id]
             
             # Clear the fault process
@@ -209,6 +219,14 @@ class FaultSystem:
             
             print(f"[{self.env.now:.2f}] ✅ 故障自动解除: {device_id}")
             print(f"   - 🔓 设备已解冻")
+            
+            # Report recovery time to KPI calculator
+            if self.kpi_calculator and recovery_time > 0:
+                self.kpi_calculator.add_fault_recovery_time(recovery_time)
+                
+                # Track AGV fault time specifically
+                if fault.fault_type == FaultType.AGV_FAULT:
+                    self.kpi_calculator.update_agv_fault_time(device_id, recovery_time)
             
             # Send recovery alert
             self._send_recovery_alert(device_id, fault_symptom)

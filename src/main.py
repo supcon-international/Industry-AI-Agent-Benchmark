@@ -108,6 +108,8 @@ class FactorySimulation:
             if duration:
                 logger.info(f"⏱️  Running simulation for {duration} seconds")
                 self.factory.run(until=duration)
+                # For fixed duration, print scores after normal completion
+                self.factory.print_final_scores()
             else:
                 logger.info("🔄 Running simulation indefinitely (Ctrl+C to stop)")
                 while self.running:
@@ -117,15 +119,29 @@ class FactorySimulation:
                     
         except KeyboardInterrupt:
             logger.info("🛑 Simulation interrupted by user")
+            # Scores will be printed in shutdown()
         except Exception as e:
             logger.error(f"❌ Simulation error: {e}")
         finally:
-            self.shutdown()
+            # For indefinite runs or errors, print scores during shutdown
+            if not duration:
+                self.shutdown()
+            else:
+                # For fixed duration runs, just clean up without printing scores again
+                logger.info("🧹 Cleaning up resources...")
+                self.running = False
+                if self.mqtt_client:
+                    self.mqtt_client.disconnect()
+                logger.info("👋 Factory Simulation stopped")
 
     def shutdown(self):
         """Clean up resources."""
         logger.info("🧹 Shutting down Factory Simulation...")
         self.running = False
+        
+        # Print final scores when shutting down
+        if self.factory:
+            self.factory.print_final_scores()
         
         if self.mqtt_client:
             self.mqtt_client.disconnect()
