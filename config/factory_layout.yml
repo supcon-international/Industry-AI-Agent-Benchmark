@@ -110,7 +110,7 @@ conveyors:
   - id: "Conveyor_CQ"
     position: [65, 20]
     transfer_time: 5.0
-    main_capacity: 2
+    main_capacity: 4
     upper_capacity: 2
     lower_capacity: 2
     interacting_points: [P6]

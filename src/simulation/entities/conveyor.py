@@ -484,35 +484,29 @@ class TripleBufferConveyor(BaseConveyor):
             
             self.set_status(DeviceStatus.WORKING)
             self.publish_status()
-
-            # 使用Product的智能路由决策
-            target_buffer = self._determine_target_buffer_for_product(product)
             
-            # 计算剩余传输时间（处理中断后恢复的情况）
+             # 计算剩余传输时间（处理中断后恢复的情况）
             if product.id in self.product_elapsed_times:
                 # 恢复传输：使用之前记录的已传输时间
                 elapsed_time = self.product_elapsed_times[product.id]
                 remaining_time = max(0, self.transfer_time - elapsed_time)
-                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: {product.id} resume transferring, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
-                print(msg)
-                self.publish_status(msg)
-                # 清除elapsed记录，重新记录开始时间
-                del self.product_elapsed_times[product.id]
-                self.product_start_times[product.id] = self.env.now
+                msg = f"[{self.env.now:.2f}] Conveyor {self.id}: {product.id} resume transferring, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
             else:
                 # 第一次开始传输
-                self.product_start_times[product.id] = self.env.now
                 remaining_time = self.transfer_time
-                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: {product.id} start transferring, need {remaining_time:.1f}s"
-                print(msg)
-                self.publish_status(msg)
+                msg = f"[{self.env.now:.2f}] Conveyor {self.id}: {product.id} start transferring, need {remaining_time:.1f}s"
+            print(msg)
+            self.publish_status(msg)
+            self.product_start_times[product.id] = self.env.now
             
             # 进行timeout（模拟搬运时间）
             yield self.env.timeout(remaining_time)
             
+            is_first_product = self.main_buffer.items[0].id == product.id
+
             # 获取产品
             actual_product = yield self.main_buffer.get()
-            
+
             # 确保获取的是正确的产品
             if actual_product.id != product.id:
                 # 如果不是预期的产品，放回去
@@ -524,29 +518,56 @@ class TripleBufferConveyor(BaseConveyor):
             
             self.publish_status()
             
+            target_buffer = self._determine_target_buffer_for_product(product)
             # 根据目标buffer类型决定处理
             if target_buffer in ["upper", "lower"]:
                 # P3产品返工路径：选择最优的side buffer
                 chosen_buffer = self._choose_optimal_side_buffer()
                 buffer_name = "upper_buffer" if chosen_buffer == self.upper_buffer else "lower_buffer"
-                # 不更新位置，因为还在同一个conveyor内
                 actual_product.add_history(self.env.now, f"Moved to {buffer_name} of {self.id} for rework")
-                yield chosen_buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {buffer_name}")
+                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {buffer_name}"
             else:
-                # 正常流转到下游站点
-                # 先尝试放入，成功后再更新位置信息
-                yield self.downstream_station.buffer.put(actual_product)
-                # put成功后更新产品位置信息
-                if hasattr(actual_product, 'update_location'):
-                    actual_product.update_location(self.downstream_station.id, self.env.now)
-                else:
-                    # 兼容没有update_location方法的产品
-                    actual_product.current_location = self.downstream_station.id
-                    actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
-                
-                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
+                chosen_buffer = self.downstream_station.buffer
+                buffer_name = self.downstream_station.id+"_buffer"
+                msg = f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}"
+            print(msg)
+            self.publish_status(msg)
             
+            if is_first_product:
+                # 这是最前面的产品，设为领头进程
+                self.blocked_leader_process = self.env.active_process
+                print(f"[{self.env.now:.2f}] 🎯 Conveyor {self.id}: {actual_product.id} is the leader product (first in order)")
+                
+                downstream_full = self.downstream_station.is_full()
+                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {self.downstream_station.buffer.items}/{self.downstream_station.buffer.capacity}, full={downstream_full}")
+                    
+                if downstream_full and self.status != DeviceStatus.BLOCKED:
+                    # 下游已满，阻塞其他产品
+                    self._block_all_products()
+                    
+                # 尝试放入下游（可能会阻塞）
+                print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: Leader {actual_product.id} trying to put to downstream...")
+                yield chosen_buffer.put(actual_product)
+
+                # 成功放入，如果之前是阻塞状态，现在解除
+                if self.status == DeviceStatus.BLOCKED:
+                    self._unblock_all_products()
+                    
+            else:
+                # 不是第一个产品
+                print(f"[{self.env.now:.2f}] 📦 Conveyor {self.id}: {actual_product.id} is NOT the leader product (order: {[p.id for p in self.main_buffer.items]})")
+                
+                # 非领头产品需要等待，直到轮到它或者传送带解除阻塞
+                while self.status == DeviceStatus.BLOCKED:
+                    print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: {actual_product.id} waiting for its turn or unblock...")
+                    yield self.env.timeout(0.1)
+                
+                # 现在可以尝试放入下游
+                yield chosen_buffer.put(actual_product)
+
+            if not target_buffer in ["upper", "lower"]:
+                actual_product.update_location(self.downstream_station.id, self.env.now)
+
             # 清理时间记录
             if actual_product and actual_product.id in self.product_start_times:
                 del self.product_start_times[actual_product.id]
@@ -556,29 +577,21 @@ class TripleBufferConveyor(BaseConveyor):
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
             
-            # 记录中断时已经传输的时间
+            # 记录中断时已经传输的时间（阻塞和故障都需要）
             if product.id in self.product_start_times:
                 start_time = self.product_start_times[product.id]
                 elapsed_before_interrupt = self.env.now - start_time
                 self.product_elapsed_times[product.id] = self.product_elapsed_times.get(product.id, 0) + elapsed_before_interrupt
-                # 清理开始时间记录
                 del self.product_start_times[product.id]
-                print(f"[{self.env.now:.2f}] 💾 TripleBufferConveyor {self.id}: 产品 {product.id} 中断前已传输 {elapsed_before_interrupt:.1f}s")
+                print(f"[{self.env.now:.2f}] 💾 Conveyor {self.id}: 产品 {product.id} 中断前已传输 {elapsed_before_interrupt:.1f}s，剩余 {self.transfer_time - self.product_elapsed_times.get(product.id, 0):.1f}s")
             
-            # 如果产品已经取出，放回main_buffer
-            if actual_product and actual_product not in self.main_buffer.items:
-                yield self.main_buffer.put(actual_product)
-                print(f"[{self.env.now:.2f}] 🔄 TripleBufferConveyor {self.id}: Product {actual_product.id} returned to main_buffer")
-            self.set_status(DeviceStatus.FAULT)
-            self.publish_status() # 立即发布故障状态
-                
         finally:
             self.publish_status()
 
     def _determine_target_buffer_for_product(self, product):
         """根据产品类型和工艺状态确定目标buffer"""
         if product.product_type != "P3":
-            print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P1/P2产品 {product.id} 直接进入main_buffer")
+            print(f"[{self.env.now:.2f}] 🔍 TripleBufferConveyor {self.id}: P1/P2产品 {product.id} 直接进入下游工站buffer")
             return "main"
         
         # P3产品的特殊逻辑：基于访问次数判断
@@ -624,3 +637,30 @@ class TripleBufferConveyor(BaseConveyor):
                 interrupted_count += 1
         print(f"[{self.env.now:.2f}] 🚫 TripleBufferConveyor {self.id}: Interrupted {interrupted_count} product processes")
         return interrupted_count
+
+    def _block_all_products(self, reason="Downstream or side buffer blocked"):
+        """阻塞所有产品处理（除了正在等待的领头产品）"""
+        if self.status == DeviceStatus.BLOCKED:
+            return  # 已经处于阻塞状态
+        
+        # 设置阻塞状态
+        self.set_status(DeviceStatus.BLOCKED)
+        self.publish_status("Conveyor blocked - downstream or side buffer full")
+        
+        # 中断所有非领头的活跃进程（与interrupt_all_processing类似）
+        blocked_count = 0
+        for product_id, process in list(self.active_processes.items()):
+            if process != self.blocked_leader_process and process.is_alive:
+                process.interrupt(reason)
+                blocked_count += 1
+
+    def _unblock_all_products(self):
+        """解除阻塞，允许产品继续处理"""
+        if self.status != DeviceStatus.BLOCKED:
+            return  # 不在阻塞状态
+        
+        self.set_status(DeviceStatus.WORKING)
+        self.publish_status("Conveyor unblocked - resuming operation")
+        self.blocked_leader_process = None
+        
+        print(f"[{self.env.now:.2f}] ✅ Conveyor {self.id}: Unblocked, products can resume")
