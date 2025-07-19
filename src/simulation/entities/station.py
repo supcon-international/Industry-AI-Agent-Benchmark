@@ -247,18 +247,19 @@ class Station(Device):
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer, wrapped in INTERACTING state."""
         success = False
-        self.set_status(DeviceStatus.INTERACTING)
-        self.publish_status()
+        msg = f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer."
+        self.publish_status(msg)
+
         try:
             yield self.buffer.put(product)
-            print(f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer.")
+            msg = f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer."
+            print(msg)
+            self.publish_status(msg)
+
             success = True
         except simpy.Interrupt:
             print(f"[{self.env.now:.2f}] ⚠️ {self.id}: add_product_to_buffer interrupted.")
             success = False
-        finally:
-            self.set_status(DeviceStatus.IDLE)
-            self.publish_status()
         return success
 
     def get_buffer_level(self) -> int:

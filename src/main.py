@@ -48,7 +48,7 @@ class FactorySimulation:
         logger.info("🏭 Initializing Factory Simulation...")
         
         # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP")
         
         # Connect to MQTT
         self.mqtt_client.connect()

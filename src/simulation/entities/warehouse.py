@@ -16,14 +16,12 @@ class BaseWarehouse(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        buffer_size: int = 1000,
         mqtt_client=None,
         interacting_points: list = [],
         **kwargs # Absorb other config values
     ):
         super().__init__(env, id, position, device_type="warehouse", mqtt_client=mqtt_client)
-        self.buffer = simpy.Store(env, capacity=buffer_size)
-        self.buffer_size = buffer_size
+        self.buffer = simpy.Store(env)
         self.interacting_points = interacting_points
         self.stats = {}  # To be overridden by subclasses
 
@@ -64,7 +62,7 @@ class RawMaterial(BaseWarehouse):
             "total_materials_supplied": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
         }
-        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready, buffer size: {self.buffer_size}")
+        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready")
         self.publish_status("Raw material warehouse is ready")
 
     def create_raw_material(self, product_type: str, order_id: str) -> Product:
@@ -79,7 +77,8 @@ class RawMaterial(BaseWarehouse):
         return product
 
     def is_full(self) -> bool:
-        return self.get_buffer_level() >= self.buffer_size
+        # return self.get_buffer_level() >= self.buffer_size
+        return False
 
 class Warehouse(BaseWarehouse):
     """Finished product warehouse - the ending point of the production line"""

@@ -83,16 +83,24 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory):
                 continue
             
             # 1:StationB, 2:Conveyor_BC, 3:StationC
-            fast_fault = input("请输入故障类型 (1:StationB for 50s, 2:Conveyor_BC for 50s, 3:StationC for 50s) else manual: ").strip()
+            fast_fault = input("请输入故障类型 (1:StationA for 50s, 2:Conveyor_AB for 50s, 3.StationB for 50s,4, Conveyor_BC for 50s, 5:StationC for 50s) else manual: ").strip()
             if fast_fault == "1":
                 fault_type = FaultType.STATION_FAULT
-                device_id = "StationB"
+                device_id = "StationA"
                 fault_duration = 50.0
             elif fast_fault == "2":
                 fault_type = FaultType.CONVEYOR_FAULT
-                device_id = "Conveyor_BC"
+                device_id = "Conveyor_AB"
                 fault_duration = 50.0
             elif fast_fault == "3":
+                fault_type = FaultType.STATION_FAULT
+                device_id = "StationB"
+                fault_duration = 50.0
+            elif fast_fault == "4":
+                fault_type = FaultType.STATION_FAULT
+                device_id = "Conveyor_BC"
+                fault_duration = 50.0
+            elif fast_fault == "5":
                 fault_type = FaultType.STATION_FAULT
                 device_id = "StationC"
                 fault_duration = 50.0

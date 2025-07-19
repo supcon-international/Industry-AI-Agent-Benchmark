@@ -97,7 +97,7 @@ class AGV(Vehicle):
         """检查电量是否过低"""
         return self.battery_level <= self.low_battery_threshold
 
-    def can_complete_task(self, estimated_travel_time: float = 0.0, estimated_actions: int = 0) -> bool:
+    def can_complete_task(self, estimated_travel_time: float = 0.0, estimated_actions: int = 0, target_point: Optional[str] = None) -> bool:
         """预估是否有足够电量完成任务"""
         # Convert travel time to estimated distance for battery calculation
         estimated_distance = estimated_travel_time * self.speed_mps
@@ -105,9 +105,11 @@ class AGV(Vehicle):
             estimated_distance * self.battery_consumption_per_meter +
             estimated_actions * self.battery_consumption_per_action
         )
-        
+        if target_point:
         # 预留回到充电点的电量 (使用路径时间表)
-        return_time = get_travel_time(self.current_point, self.charging_point)
+            return_time = get_travel_time(target_point, self.charging_point)
+        else:
+            return_time = get_travel_time(self.current_point, self.charging_point)
         if return_time < 0:
             # If no direct path to charging point, use fallback calculation
             return_distance = math.dist(self.position, self.path_points[self.charging_point])
@@ -116,7 +118,7 @@ class AGV(Vehicle):
             return_distance = return_time * self.speed_mps
             return_consumption = return_distance * self.battery_consumption_per_meter
         
-        total_needed = estimated_consumption + return_consumption + 2.0  # 2%安全余量
+        total_needed = estimated_consumption + return_consumption + 3.0  # 3%安全余量
         return self.battery_level >= total_needed
 
     def move_to(self, target_point: str):
@@ -162,7 +164,7 @@ class AGV(Vehicle):
                 return False, msg
                 
             # check if battery is enough
-            if not self.can_complete_task(travel_time, 1):
+            if not self.can_complete_task(travel_time, 1, target_point):
                 msg = f"Battery level is too low to move to {target_point}"
                 print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
                 self.stats["tasks_interrupted"] += 1

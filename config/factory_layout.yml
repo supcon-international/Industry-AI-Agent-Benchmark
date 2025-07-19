@@ -118,7 +118,6 @@ conveyors:
 warehouses:
   - id: "RawMaterial"
     position: [0, 20]
-    buffer_size: 100
     interacting_points: [P0]
 
   - id: "Warehouse"
