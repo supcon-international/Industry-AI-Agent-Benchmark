@@ -39,7 +39,7 @@ def test_conveyor_fault_simple():
     # 创建设备
     station_a = Station(
         env, "StationA", (0, 0), buffer_size=5,
-        processing_times={"P1": (5, 10)},
+        processing_times={"P1": (2, 3)},
         mqtt_client=mqtt_client
     )
     
@@ -51,7 +51,7 @@ def test_conveyor_fault_simple():
     
     conveyor = Conveyor(
         env, id="Conveyor_AB", capacity=3, 
-        position=(0, 0), transfer_time=10,
+        position=(0, 0), transfer_time=15,
         mqtt_client=mqtt_client
     )
     

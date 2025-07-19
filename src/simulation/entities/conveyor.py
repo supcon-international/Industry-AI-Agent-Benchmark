@@ -23,6 +23,7 @@ class Conveyor(BaseConveyor):
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
         self.product_start_times = {}  # Track when each product started transfer
+        self.product_elapsed_times = {}  # Track elapsed time before interruption
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
@@ -151,12 +152,12 @@ class Conveyor(BaseConveyor):
                 self.set_status(DeviceStatus.WORKING)
             
             # 计算剩余传输时间（处理中断后恢复的情况）
-            if product.id in self.product_start_times:
-                # 如果之前已经开始传输，计算已经过去的时间
-                original_start = self.product_start_times[product.id]
-                elapsed_time = self.env.now - original_start
+            if product.id in self.product_elapsed_times:
+                # 恢复传输：使用之前记录的已传输时间
+                elapsed_time = self.product_elapsed_times[product.id]
                 remaining_time = max(0, self.transfer_time - elapsed_time)
                 print(f"[{self.env.now:.2f}] Conveyor {self.id}: 产品 {product.id} 恢复传输，已传输 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                self.product_start_times[product.id] = self.env.now
             else:
                 # 第一次开始传输
                 self.product_start_times[product.id] = self.env.now
@@ -193,9 +194,21 @@ class Conveyor(BaseConveyor):
             # 清理传输时间记录
             if actual_product.id in self.product_start_times:
                 del self.product_start_times[actual_product.id]
+            if actual_product.id in self.product_elapsed_times:
+                del self.product_elapsed_times[actual_product.id]
                 
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ Conveyor {self.id}: Processing of product {product.id} was interrupted")
+            
+            # 记录中断时已经传输的时间
+            if product.id in self.product_start_times:
+                start_time = self.product_start_times[product.id]
+                elapsed_before_interrupt = self.env.now - start_time
+                self.product_elapsed_times[product.id] = self.product_elapsed_times.get(product.id, 0) + elapsed_before_interrupt
+                # 清理开始时间记录
+                del self.product_start_times[product.id]
+                print(f"[{self.env.now:.2f}] 💾 Conveyor {self.id}: 产品 {product.id} 中断前已传输 {elapsed_before_interrupt:.1f}s")
+            
             # 如果产品已经取出，放回buffer
             if actual_product and actual_product not in self.buffer.items:
                 yield self.buffer.put(actual_product)
@@ -212,10 +225,18 @@ class Conveyor(BaseConveyor):
         
         # 清理不在buffer中的产品的时间记录
         products_in_buffer = {p.id for p in self.buffer.items}
+        
+        # 清理start_times
         expired_products = [pid for pid in self.product_start_times if pid not in products_in_buffer]
         for pid in expired_products:
             del self.product_start_times[pid]
-            print(f"[{self.env.now:.2f}] 🗑️ Conveyor {self.id}: 清理过期产品 {pid} 的时间记录")
+            print(f"[{self.env.now:.2f}] 🗑️ Conveyor {self.id}: 清理过期产品 {pid} 的开始时间记录")
+        
+        # 清理elapsed_times
+        expired_elapsed = [pid for pid in self.product_elapsed_times if pid not in products_in_buffer]
+        for pid in expired_elapsed:
+            del self.product_elapsed_times[pid]
+            print(f"[{self.env.now:.2f}] 🗑️ Conveyor {self.id}: 清理过期产品 {pid} 的已传输时间记录")
         
         # 恢复后，它应该继续工作，而不是空闲
         self.set_status(DeviceStatus.WORKING)
@@ -249,6 +270,7 @@ class TripleBufferConveyor(BaseConveyor):
         self.main_process = None  # 主运行进程
         self.active_processes = {}  # Track active transfer processes per product
         self.product_start_times = {}  # Track when each product started transfer
+        self.product_elapsed_times = {}  # Track elapsed time before interruption
         
         # 传送带默认状态为工作中
         self.status = DeviceStatus.WORKING
@@ -393,8 +415,23 @@ class TripleBufferConveyor(BaseConveyor):
             # 使用Product的智能路由决策
             target_buffer = self._determine_target_buffer_for_product(product)
             
-            # 先进行timeout（模拟搬运时间）
-            yield self.env.timeout(self.transfer_time)
+            # 计算剩余传输时间（处理中断后恢复的情况）
+            if product.id in self.product_elapsed_times:
+                # 恢复传输：使用之前记录的已传输时间
+                elapsed_time = self.product_elapsed_times[product.id]
+                remaining_time = max(0, self.transfer_time - elapsed_time)
+                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: 产品 {product.id} 恢复传输，已传输 {elapsed_time:.1f}s，剩余 {remaining_time:.1f}s")
+                # 清除elapsed记录，重新记录开始时间
+                del self.product_elapsed_times[product.id]
+                self.product_start_times[product.id] = self.env.now
+            else:
+                # 第一次开始传输
+                self.product_start_times[product.id] = self.env.now
+                remaining_time = self.transfer_time
+                print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: 产品 {product.id} 开始传输，需要 {remaining_time:.1f}s")
+            
+            # 进行timeout（模拟搬运时间）
+            yield self.env.timeout(remaining_time)
             
             # 获取产品
             actual_product = yield self.main_buffer.get()
@@ -430,9 +467,25 @@ class TripleBufferConveyor(BaseConveyor):
                     actual_product.add_history(self.env.now, f"Auto-transferred via conveyor {self.id} to {self.downstream_station.id}")
                 
                 print(f"[{self.env.now:.2f}] TripleBufferConveyor {self.id}: moved product {actual_product.id} to {self.downstream_station.id}")
-                
+            
+            # 清理时间记录
+            if actual_product and actual_product.id in self.product_start_times:
+                del self.product_start_times[actual_product.id]
+            if actual_product and actual_product.id in self.product_elapsed_times:
+                del self.product_elapsed_times[actual_product.id]
+
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
+            
+            # 记录中断时已经传输的时间
+            if product.id in self.product_start_times:
+                start_time = self.product_start_times[product.id]
+                elapsed_before_interrupt = self.env.now - start_time
+                self.product_elapsed_times[product.id] = self.product_elapsed_times.get(product.id, 0) + elapsed_before_interrupt
+                # 清理开始时间记录
+                del self.product_start_times[product.id]
+                print(f"[{self.env.now:.2f}] 💾 TripleBufferConveyor {self.id}: 产品 {product.id} 中断前已传输 {elapsed_before_interrupt:.1f}s")
+            
             # 如果产品已经取出，放回main_buffer
             if actual_product and actual_product not in self.main_buffer.items:
                 yield self.main_buffer.put(actual_product)

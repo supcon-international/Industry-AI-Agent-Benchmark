@@ -289,3 +289,7 @@ uv run test/run_tests.py
 
 # 7.18
 1. load unload buffer selection binded to interacting_points，Q has 2 buffer which correspond to 2 interacting_points, but there is no split logic for them
+
+2. conveyor resume still have problem
+3. maybe simulation time should be more general (sometimes 1 sometimes 0.1)
+4. emergency charging bug
