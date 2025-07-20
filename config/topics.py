@@ -2,39 +2,39 @@
 # MQTT Topic definitions for the SUPCON AdventureX Factory Simulation
 
 # Device status topics (published by factory devices)
-# STATION_STATUS_TOPIC = "NLDF/{line}/station/{device_id}/status"
-# AGV_STATUS_TOPIC = "NLDF/{line}/resource/{device_id}/status"
-# QUALITY_CHECKER_STATUS_TOPIC = "NLDF/{line}/quality/{device_id}/status"
-NEW_FACTORY_STATUS_TOPIC = "NLDF/{line}/{device_type}/{device_id}/status"
-FACTORY_STATUS_TOPIC = "NLDF/{line}/status"
+# STATION_STATUS_TOPIC = "NLDF3/{line}/station/{device_id}/status"
+# AGV_STATUS_TOPIC = "NLDF3/{line}/resource/{device_id}/status"
+# QUALITY_CHECKER_STATUS_TOPIC = "NLDF3/{line}/quality/{device_id}/status"
+NEW_FACTORY_STATUS_TOPIC = "NLDF3/{line}/{device_type}/{device_id}/status"
+FACTORY_STATUS_TOPIC = "NLDF3/{line}/status"
 
 # Buffer full alert topics (published by fault system)
-BUFFER_FULL_ALERT_TOPIC = "NLDF/line1/alerts/buffer_full"
-AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF/line1/alerts/agv_battery_low"
+BUFFER_FULL_ALERT_TOPIC = "NLDF3/line1/alerts/buffer_full"
+AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF3/line1/alerts/agv_battery_low"
 
 # Order and KPI topics
-NEW_ORDER_TOPIC = "NLDF/line1/orders/new"
-KPI_UPDATE_TOPIC = "NLDF/{line}/kpi/update"
-
+NEW_ORDER_TOPIC = "NLDF3/line1/orders/new"
+KPI_UPDATE_TOPIC = "NLDF3/line1/kpi"
+RESULT_TOPIC = "NLDF3/line1/result"
 # Agent command topics (published by AI agents)
-AGENT_COMMANDS_TOPIC = "NLDF/line1/agent/commands"
+AGENT_COMMANDS_TOPIC = "NLDF3/line1/agent/commands"
 # Agent response topics (subscribed by AI agents)
-AGENT_RESPONSES_TOPIC = "NLDF/line1/agent/responses"
+AGENT_RESPONSES_TOPIC = "NLDF3/line1/agent/responses"
 
 # Natural language logs for visualization
-NL_LOGS_TOPIC = "NLDF/{line}/agent/nl_logs"
+NL_LOGS_TOPIC = "NLDF3/{line}/agent/nl_logs"
 
 # Topic patterns for subscription
-ALL_STATION_STATUS = "NLDF/{line}/station/+/status"
-ALL_AGV_STATUS = "NLDF/{line}/resource/+/status"
-ALL_FACTORY_TOPICS = "NLDF/{line}/+"
+ALL_STATION_STATUS = "NLDF3/{line}/station/+/status"
+ALL_AGV_STATUS = "NLDF3/{line}/resource/+/status"
+ALL_FACTORY_TOPICS = "NLDF3/{line}/+"
 
 # Legacy topic definitions (keeping for backward compatibility)
-STATION_STATUS_TOPIC_PREFIX = "NLDF/line1/station"
-CONVEYOR_STATUS_TOPIC_PREFIX = "NLDF/line1/conveyor"
-AGV_STATUS_TOPIC_PREFIX = "NLDF/line1/agv"
-WAREHOUSE_STATUS_TOPIC_PREFIX = "NLDF/line1/warehouse"
-DEVICE_ALERT_TOPIC = "NLDF/line1/alerts"
+STATION_STATUS_TOPIC_PREFIX = "NLDF3/line1/station"
+CONVEYOR_STATUS_TOPIC_PREFIX = "NLDF3/line1/conveyor"
+AGV_STATUS_TOPIC_PREFIX = "NLDF3/line1/agv"
+WAREHOUSE_STATUS_TOPIC_PREFIX = "NLDF3/line1/warehouse"
+DEVICE_ALERT_TOPIC = "NLDF3/line1/alerts"
 
 def get_station_status_topic(station_id: str) -> str:
     """Returns the status topic for a specific station."""

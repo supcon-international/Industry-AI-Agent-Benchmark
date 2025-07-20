@@ -63,7 +63,9 @@ class QualityChecker(Station):
             "average_processing_time": 0.0,
             "passed_count": 0,
             "reworked_count": 0,
-            "scrapped_count": 0
+            "scrapped_count": 0,
+            "working_time": 0.0,  # Total time spent in PROCESSING status
+            "start_time": env.now  # Track when station started
         }
         
         print(f"[{self.env.now:.2f}] 🔍 {self.id}: Simple quality checker ready (pass≥{self.pass_threshold}%, scrap≤{self.scrap_threshold}%)")
@@ -276,7 +278,9 @@ class QualityChecker(Station):
             "average_processing_time": 0.0,
             "passed_count": 0,
             "reworked_count": 0,
-            "scrapped_count": 0
+            "scrapped_count": 0,
+            "working_time": 0.0,  # Total time spent in PROCESSING status
+            "start_time": self.env.now  # Track when station started
         }
     
     def pop(self, buffer_type=None):

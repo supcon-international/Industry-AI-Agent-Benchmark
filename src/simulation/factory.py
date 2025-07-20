@@ -365,7 +365,7 @@ class Factory:
         if self.kpi_calculator:
             final_scores = self.kpi_calculator.get_final_score()
             print(f"\n{'='*60}")
-            print("🏆 最终竞赛得分（基于 PRD 3.4 第2.8节 KPI 指标）")
+            print("🏆 最终竞赛得分")
             print(f"{'='*60}")
             print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
             print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")

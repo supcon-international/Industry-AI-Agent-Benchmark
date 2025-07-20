@@ -196,12 +196,12 @@ class Conveyor(BaseConveyor):
             # Track start of working time for KPI
             working_start_time = self.env.now
             yield self.env.timeout(remaining_time)
-
             is_first_product = self.buffer.items[0].id == product.id
-            
-            # Report energy cost for this transfer
+            # Report energy cost and working time for this transfer
             if self.kpi_calculator:
                 self.kpi_calculator.add_energy_cost(self.id, remaining_time, is_peak_hour=False)
+                # Track working time for KPI utilization calculation
+                self.kpi_calculator.track_device_working_time(self.id, remaining_time)
             
             # 传输完成，从buffer获取产品（get）
             actual_product = yield self.buffer.get()
@@ -579,9 +579,11 @@ class TripleBufferConveyor(BaseConveyor):
             
             is_first_product = self.main_buffer.items[0].id == product.id
 
-            # Report energy cost for this transfer
+            # Report energy cost and working time for this transfer
             if self.kpi_calculator:
                 self.kpi_calculator.add_energy_cost(self.id, self.transfer_time, is_peak_hour=False)
+                # Track working time for KPI utilization calculation
+                self.kpi_calculator.track_device_working_time(self.id, self.transfer_time)
             
             # 获取产品
             actual_product = yield self.main_buffer.get()
