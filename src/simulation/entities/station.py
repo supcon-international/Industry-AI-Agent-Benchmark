@@ -96,7 +96,6 @@ class Station(Device):
         
         self.last_status_change_time = self.env.now
         super().set_status(new_status, message)
-        self.publish_status(message)
 
     def publish_status(self, message: Optional[str] = None):
         """Publishes the current status of the station to MQTT."""
@@ -204,9 +203,6 @@ class Station(Device):
                 self.stats["total_processing_time"] / self.stats["products_processed"]
             )
             
-            # Set to IDLE now, as core processing is done.
-            # The subsequent transfer is a separate action performed while IDLE.
-            self.set_status(DeviceStatus.IDLE)
             # Processing finished successfully
             msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished processing, actual processing time {processing_time:.1f}s"
             print(msg)
@@ -228,8 +224,10 @@ class Station(Device):
                 self.current_product_start_time = None
             
             if product not in self.buffer.items:
-                # 产品已取出，说明处理时间已经完成，应该继续流转
+                # 产品已取出，说明处理时间已经完成，应该继续流转，但需要等待设备可操作防止覆盖Fault状态
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
+                while not self.can_operate():
+                    yield self.env.timeout(1)
                 yield self.env.process(self._transfer_product_to_next_stage(product))
                 # 清理所有时间记录
                 self.current_product_id = None
@@ -256,9 +254,9 @@ class Station(Device):
             # No downstream, end of process
             return
         
-        # Set status to INTERACTING before the potentially blocking push operation
-        self.set_status(DeviceStatus.INTERACTING)
-        self.publish_status()
+        if self.downstream_conveyor.is_full():
+            self.set_status(DeviceStatus.BLOCKED)
+            self.publish_status("downstream conveyor is full, station is blocked")
 
         # normal conveyor - SimPy push()会自动阻塞直到有空间
         yield self.downstream_conveyor.push(product)
@@ -269,21 +267,19 @@ class Station(Device):
         return
 
     def add_product_to_buffer(self, product: Product):
-        """Add a product to the station's buffer, wrapped in INTERACTING state."""
+        """Add a product to the station's buffer"""
         success = False
-        msg = f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer."
-        self.publish_status(msg)
 
         try:
             yield self.buffer.put(product)
             msg = f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer."
-            print(msg)
-            self.publish_status(msg)
-
             success = True
         except simpy.Interrupt:
-            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: add_product_to_buffer interrupted.")
+            msg = f"[{self.env.now:.2f}] ⚠️ {self.id}: add_product_to_buffer interrupted."
             success = False
+
+        print(msg)
+        self.publish_status(msg)
         return success
 
     def get_buffer_level(self) -> int:

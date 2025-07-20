@@ -128,8 +128,6 @@ class QualityChecker(Station):
             # Perform quality inspection
             decision = self._make_simple_decision(product)
             
-            # Set to IDLE now, as core processing is done.
-            self.set_status(DeviceStatus.IDLE)
             # Processing finished successfully
             msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished inspecting, actual processing time: {actual_processing_time:.1f}s"
             print(msg)
@@ -154,9 +152,6 @@ class QualityChecker(Station):
 
     def _execute_quality_decision(self, product: Product, decision: SimpleDecision):
         """Execute quality decision (equivalent to _transfer_product_to_next_stage)"""
-        # Set status to INTERACTING before the potentially blocking operations
-        self.set_status(DeviceStatus.INTERACTING)
-        self.publish_status()
         
         if decision == SimpleDecision.PASS:
             self.stats["passed_count"] += 1
@@ -170,26 +165,29 @@ class QualityChecker(Station):
             
             # Check if output buffer is full and report if needed
             if len(self.output_buffer.items) >= self.output_buffer_capacity:
+                self.set_status(DeviceStatus.BLOCKED)
+                msg = f"[{self.env.now:.2f}] ⚠️ {self.id}: output buffer is full, station is blocked"
+                print(msg)
+                self.publish_status(msg)
                 self.report_buffer_full("output_buffer")
             
             # Put product into output buffer (may block if full)
             yield self.output_buffer.put(product)
-            print(f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运")
+            msg = f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运"
             
         elif decision == SimpleDecision.SCRAP:
-            self.stats["scrapped_count"] += 1
 
-            msg = f"[{self.env.now:.2f}] ❌ {self.id}: {product.id} scrapped"
-            print(msg)
-            self.publish_status(msg)
-            self.set_status(DeviceStatus.SCRAP, message="Product scrapped")
-            
             # Report to KPI calculator
             if hasattr(self, 'kpi_calculator') and self.kpi_calculator:
                 self.kpi_calculator.complete_order_item(product.order_id, product.product_type, passed_quality=False)
             
             yield self.env.process(self._handle_product_scrap(product, "quality_inspection_failed"))
-            
+            self.stats["scrapped_count"] += 1
+            self.set_status(DeviceStatus.SCRAP)
+            msg = f"[{self.env.now:.2f}] ❌ {self.id}: {product.id} scrapping"
+            self.publish_status(msg)
+            msg = f"[{self.env.now:.2f}] ⚠️ {self.id}: {product.id} scrapped"
+
         elif decision == SimpleDecision.REWORK:
             self.stats["reworked_count"] += 1
             # 返工：回到最后一个加工工站
@@ -197,22 +195,22 @@ class QualityChecker(Station):
             if last_station:
                 # 检查output buffer是否满
                 if len(self.output_buffer.items) >= self.output_buffer_capacity:
+                    self.set_status(DeviceStatus.BLOCKED)
+                    self.publish_status("output buffer is full, station is blocked")
                     self.report_buffer_full("output_buffer")
                 
                 # 将返工产品放入output buffer，等待AGV运送
                 yield self.output_buffer.put(product)
                 msg = f"[{self.env.now:.2f}] 📦 {self.id}: {product.id} reworked to {last_station}, put into output buffer, waiting for AGV to deliver"
-                print(msg)
-                self.publish_status(msg)
+                
             else:
                 msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not determine rework station, product scrapped"
-                print(msg)
-                self.publish_status(msg)
                 yield self.env.process(self._handle_product_scrap(product, "rework_failed"))
         
         # Set status back to IDLE after the operation is complete
         self.set_status(DeviceStatus.IDLE)
-        self.publish_status()
+        print(msg)
+        self.publish_status(msg if msg else None)
 
     def _handle_product_scrap(self, product, reason: str):
         """Handle product scrapping due to quality issues"""

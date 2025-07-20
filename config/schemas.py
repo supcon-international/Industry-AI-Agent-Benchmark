@@ -9,15 +9,17 @@ from src.simulation.entities.product import Product
 class DeviceStatus(str, Enum):
     IDLE = "idle"
     PROCESSING = "processing"
-    MOVING = "moving"
-    INTERACTING = "interacting"  # New status for device-to-device interaction
-    CHARGING = "charging"
     MAINTENANCE = "maintenance"
     SCRAP = "scrap"
 
     WORKING = "working"    # 正常工作中
     BLOCKED = "blocked"    # 被堵塞
     FAULT = "fault"        # 故障状态
+
+    # AGV
+    MOVING = "moving"
+    INTERACTING = "interacting"  # New status for device-to-device interaction
+    CHARGING = "charging"
 
 class OrderPriority(str, Enum):
     LOW = "low"
