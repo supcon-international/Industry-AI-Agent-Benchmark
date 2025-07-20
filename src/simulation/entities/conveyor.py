@@ -364,8 +364,10 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None, interacting_points: list = [], kpi_calculator=None):
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], topic_manager: TopicManager, line_id: str, transfer_time: float =5.0, mqtt_client=None, interacting_points: list = [], kpi_calculator=None):
         super().__init__(env, id, position, transfer_time, mqtt_client, interacting_points)
+        self.topic_manager = topic_manager
+        self.line_id = line_id
         self.main_buffer = simpy.Store(env, capacity=main_capacity)
         self.upper_buffer = simpy.Store(env, capacity=upper_capacity)
         self.lower_buffer = simpy.Store(env, capacity=lower_capacity)
@@ -412,7 +414,7 @@ class TripleBufferConveyor(BaseConveyor):
             lower_buffer=[p.id for p in self.lower_buffer.items],
             message=message,
         )
-        topic = get_conveyor_status_topic(self.id)
+        topic = self.topic_manager.get_device_status_topic(self.line_id, self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def set_downstream_station(self, station):

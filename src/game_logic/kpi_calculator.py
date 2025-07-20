@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from config.schemas import KPIUpdate, NewOrder
 from config.topics import KPI_UPDATE_TOPIC
 from src.utils.mqtt_client import MQTTClient
+from src.utils.topic_manager import TopicManager
 
 @dataclass
 class ProductTracking:
@@ -84,9 +85,10 @@ class KPICalculator:
     - AGV Efficiency: 30%
     """
     
-    def __init__(self, env: simpy.Environment, mqtt_client: Optional[MQTTClient] = None, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, env: simpy.Environment, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, config: Optional[Dict[str, Any]] = None):
         self.env = env
         self.mqtt_client = mqtt_client
+        self.topic_manager = topic_manager
         self.stats = ProductionStats()
         self.active_orders: Dict[str, OrderTracking] = {}
         self.completed_orders: List[OrderTracking] = []
@@ -460,7 +462,8 @@ class KPICalculator:
         """Publish KPI update to MQTT."""
         try:
             if self.mqtt_client:
-                self.mqtt_client.publish(KPI_UPDATE_TOPIC, kpi_update)
+                topic = self.topic_manager.get_kpi_topic()
+                self.mqtt_client.publish(topic, kpi_update.model_dump_json())
                 print(f"[{self.env.now:.2f}] 📊 KPI Update published")
         except Exception as e:
             print(f"[{self.env.now:.2f}] ❌ Failed to publish KPI update: {e}")

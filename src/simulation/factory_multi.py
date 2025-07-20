@@ -1,4 +1,5 @@
 # src/simulation/factory_multi.py
+import os
 import simpy
 from typing import Dict, List, Optional
 
@@ -8,6 +9,7 @@ from src.utils.mqtt_client import MQTTClient
 from src.utils.config_loader import load_factory_config
 from src.simulation.entities.warehouse import Warehouse, RawMaterial
 from src.game_logic.order_generator import OrderGenerator
+from src.utils.topic_manager import TopicManager
 
 class Factory:
     """
@@ -18,15 +20,20 @@ class Factory:
         self.layout = layout_config
         self.mqtt_client = mqtt_client
         self.no_faults_mode = no_faults
+        
+        # Read player name from environment variable
+        player_name = os.getenv("PLAYER_NAME", "NLDF_DEFAULT")
+        self.topic_manager = TopicManager(player_name)
+
         self.lines: Dict[str, Line] = {}
         self.warehouse: Warehouse
         self.order_generator: OrderGenerator
 
         self.all_devices = {}
-        self._create_production_lines()
         self._create_warehouse_order_generator()
+        self._create_production_lines()
 
-        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client)
+        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.topic_manager)
 
     def _create_production_lines(self):
         """Creates all production lines based on the layout configuration."""
@@ -37,6 +44,10 @@ class Factory:
                 line_name=line_name,
                 line_config=line_config,
                 mqtt_client=self.mqtt_client,
+                topic_manager=self.topic_manager,
+                warehouse=self.warehouse,
+                raw_material=self.raw_material,
+                order_generator=self.order_generator,
                 no_faults=self.no_faults_mode
             )
             self.lines[line_name] = line
@@ -55,7 +66,8 @@ class Factory:
         self.order_generator = OrderGenerator(
             env=self.env,
             raw_material=self.raw_material,
-            mqtt_client=self.mqtt_client
+            mqtt_client=self.mqtt_client,
+            topic_manager=self.topic_manager
         )
 
     def get_device_status(self, device_id: str) -> Dict:

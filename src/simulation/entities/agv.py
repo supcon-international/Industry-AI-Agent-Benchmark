@@ -9,7 +9,7 @@ from src.simulation.entities.station import Station
 from src.simulation.entities.conveyor import Conveyor, TripleBufferConveyor
 from src.simulation.entities.warehouse import RawMaterial, Warehouse
 from config.schemas import DeviceStatus, AGVStatus
-from config.topics import get_agv_status_topic
+from src.utils.topic_manager import TopicManager
 from config.path_timing import get_travel_time, is_path_available
 import logging
 
@@ -38,20 +38,24 @@ class AGV(Vehicle):
         position: Tuple[int, int],
         path_points: Dict[str, Tuple[int, int]],
         speed_mps: float,
+        topic_manager: TopicManager,
+        line_id: str,
         payload_capacity: int = 1,
-        low_battery_threshold: float = 5.0,  # 低电量阈值
-        charging_point: str = "P10",  # 充电点坐标(可为路径点名或坐标)
-        charging_speed: float = 3.33,  # 充电速度(30秒充满)
-        battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
-        battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
-        fault_system=None, # Injected dependency
+        low_battery_threshold: float = 5.0,
+        charging_point: str = "P10",
+        charging_speed: float = 3.33,
+        battery_consumption_per_meter: float = 0.1,
+        battery_consumption_per_action: float = 0.5,
+        fault_system=None,
         mqtt_client=None,
-        kpi_calculator=None  # KPI calculator dependency
+        kpi_calculator=None
     ):
         if position not in path_points.values():
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
 
         super().__init__(env, id, position, speed_mps, mqtt_client)
+        self.topic_manager = topic_manager
+        self.line_id = line_id
         self.battery_level = 40.0
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
@@ -68,7 +72,6 @@ class AGV(Vehicle):
         self.battery_consumption_per_meter = battery_consumption_per_meter
         self.battery_consumption_per_action = battery_consumption_per_action
         
-        # 统计数据
         self.stats = {
             "total_distance": 0.0,
             "total_charge_time": 0.0,
@@ -624,15 +627,6 @@ class AGV(Vehicle):
         super().set_status(new_status)
         self.publish_status(message)
 
-    def report_battery_low(self, battery_level: float):
-        """report battery low"""
-        self._publish_fault_event("battery_low", {
-            "device_id": self.id,
-            "battery_level": battery_level,
-            "timestamp": self.env.now,
-            "severity": "warning"
-        })
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low warning ({battery_level:.1f}%)")
 
     def publish_status(self, message: Optional[str] = None):
         """Publishes the current AGV status to the MQTT broker."""
@@ -652,5 +646,18 @@ class AGV(Vehicle):
             battery_level=self.battery_level,
             message=message
         )
-        # Assuming model_dump_json() is the correct method for pydantic v2
-        self.mqtt_client.publish(get_agv_status_topic(self.id), status_payload.model_dump_json(), retain=False)
+        topic = self.topic_manager.get_device_status_topic(self.line_id, self.id)
+        self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=False)
+
+    def report_battery_low(self, battery_level: float):
+        """report battery low"""
+        topic = self.topic_manager.get_fault_alert_topic(self.line_id, self.id)
+        payload = {
+            "device_id": self.id,
+            "fault_type": "battery_low",
+            "battery_level": battery_level,
+            "timestamp": self.env.now,
+            "severity": "warning"
+        }
+        self._publish_fault_event(topic, payload)
+        print(f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low warning ({battery_level:.1f}%)")

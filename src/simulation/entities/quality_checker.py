@@ -7,7 +7,7 @@ from enum import Enum
 from config.schemas import DeviceStatus, StationStatus
 from src.simulation.entities.station import Station
 from src.simulation.entities.product import Product, QualityStatus
-from config.topics import get_station_status_topic
+from src.utils.topic_manager import TopicManager
 
 class SimpleDecision(Enum):
     """简化的质量检测决策"""
@@ -31,6 +31,8 @@ class QualityChecker(Station):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
+        topic_manager: TopicManager,
+        line_id: str,
         buffer_size: int = 1,
         processing_times: Dict[str, Tuple[int, int]] = {},
         pass_threshold: float = 80.0,  # 合格阈值
@@ -54,7 +56,7 @@ class QualityChecker(Station):
         self.output_buffer_capacity = output_buffer_capacity
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
         
-        super().__init__(env, id, position, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client, interacting_points=interacting_points)
+        super().__init__(env, id, position, topic_manager, line_id, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client, interacting_points=interacting_points)
         
         # 简单统计
         self.stats = {
@@ -83,7 +85,7 @@ class QualityChecker(Station):
             output_buffer=[p.id for p in self.output_buffer.items],
             message=message,
         )
-        topic = get_station_status_topic(self.id)
+        topic = self.topic_manager.get_device_status_topic(self.line_id, self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def process_product(self, product: Product):

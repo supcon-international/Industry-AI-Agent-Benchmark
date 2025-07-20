@@ -10,6 +10,7 @@ from src.utils.mqtt_client import MQTTClient
 from src.simulation.entities.warehouse import RawMaterial
 from src.simulation.entities.product import Product
 from src.game_logic.kpi_calculator import KPICalculator
+from src.utils.topic_manager import TopicManager
 
 class OrderGenerator:
     """
@@ -20,9 +21,10 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, kpi_calculator: Optional[KPICalculator] = None, **kwargs):
+    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, kpi_calculator: Optional[KPICalculator] = None, **kwargs):
         self.env = env
         self.mqtt_client = mqtt_client
+        self.topic_manager = topic_manager
         self.raw = raw_material
         self.kpi_calculator = kpi_calculator
         # Order generation parameters from kwargs
@@ -139,8 +141,9 @@ class OrderGenerator:
     def _publish_order(self, order: NewOrder):
         """Publish the order to MQTT."""
         try:
-            if self.mqtt_client:
-                self.mqtt_client.publish(NEW_ORDER_TOPIC, order.model_dump_json())
+            if self.mqtt_client and self.topic_manager:
+                topic = self.topic_manager.get_order_topic()
+                self.mqtt_client.publish(topic, order.model_dump_json())
             
             # Register order with KPI calculator
             if self.kpi_calculator:

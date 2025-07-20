@@ -7,7 +7,7 @@ from enum import Enum
 from src.utils.mqtt_client import MQTTClient
 from config.schemas import DeviceStatus, FaultAlert
 import json 
-from config.topics import DEVICE_ALERT_TOPIC
+from src.utils.topic_manager import TopicManager
 
 @dataclass
 class FaultDefinition:
@@ -26,10 +26,12 @@ class FaultSystem:
     简化的故障系统：冻结设备，过一段时间解冻
     """
     
-    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, kpi_calculator=None, **kwargs):
+    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None, kpi_calculator=None, **kwargs):
         self.env = env
         self.factory_devices = devices
         self.mqtt_client = mqtt_client
+        self.topic_manager = topic_manager
+        self.line_id = line_id
         self.kpi_calculator = kpi_calculator
         self.active_faults: Dict[str, 'SimpleFault'] = {}
         self.fault_processes: Dict[str, simpy.Process] = {}
@@ -243,8 +245,9 @@ class FaultSystem:
             message=f"Device {device_id} has fault: {fault.symptom}"
         )
         
-        if self.mqtt_client:
-            self.mqtt_client.publish(DEVICE_ALERT_TOPIC, alert_data.model_dump_json())
+        if self.mqtt_client and self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_fault_alert_topic(self.line_id, device_id)
+            self.mqtt_client.publish(topic, alert_data.model_dump_json())
 
     def _send_recovery_alert(self, device_id: str, last_symptom: str):
         """发送恢复警报"""
@@ -258,8 +261,9 @@ class FaultSystem:
             message=f"Device {device_id} fault has been automatically recovered"
         )
         
-        if self.mqtt_client:
-            self.mqtt_client.publish(DEVICE_ALERT_TOPIC, alert_data.model_dump_json())
+        if self.mqtt_client and self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_fault_alert_topic(self.line_id, device_id)
+            self.mqtt_client.publish(topic, alert_data.model_dump_json())
 
     def force_clear_fault(self, device_id: str) -> bool:
         """强制清除故障（调试用）"""
