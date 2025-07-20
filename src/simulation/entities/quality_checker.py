@@ -279,6 +279,31 @@ class QualityChecker(Station):
             "scrapped_count": 0
         }
     
+    def pop(self, buffer_type=None):
+        """Remove and return a product from the specified buffer.
+        
+        Args:
+            buffer_type: "buffer" for input buffer, "output_buffer" for output buffer
+            
+        Returns:
+            The removed product
+        """
+        if buffer_type == "output_buffer" or buffer_type is None:
+            # 从 output_buffer 取货（默认）
+            product = yield self.output_buffer.get()
+            msg = f"Product {product.id} taken from {self.id} output_buffer by AGV"
+        else:
+            # 从输入 buffer 取货，需要检查是否正在处理
+            if len(self.buffer.items) > 0 and self.current_product_id == self.buffer.items[0].id:
+                raise ValueError(f"Product {self.current_product_id} is currently being processed and cannot be taken")
+            
+            product = yield self.buffer.get()
+            msg = f"Product {product.id} taken from {self.id} input buffer by AGV"
+        
+        print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
+        self.publish_status(msg)
+        return product
+    
     def add_product_to_outputbuffer(self, product: Product):
         """Add a product to its output buffer (used by AGV for delivery)"""
         yield self.output_buffer.put(product)

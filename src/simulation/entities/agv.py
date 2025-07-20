@@ -214,8 +214,10 @@ class AGV(Vehicle):
         finally:
             self.action = None
 
-    def load_from(self, device:Device, buffer_type=None, product_id=None, action_time_factor=1) :
+    def load_from(self, device:Device, buffer_type=None, action_time_factor=1) :
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
+        
+        注意：product_id 参数已废弃，只能取第一个产品（FIFO）
         """
         if not self.can_operate():
                 msg = f"Can not load. AGV {self.id} is not available."
@@ -257,16 +259,8 @@ class AGV(Vehicle):
                     feedback = f"{device.id} {buffer_name}为空，无法取货"
                     return False, feedback, None
                     
-                if product_id:
-                    for item in target_buffer.items:
-                        if item.id == product_id:
-                            product = item
-                            break
-                    if not product:
-                        feedback = f"产品{product_id}不存在"
-                        return False, feedback, None
-                else:
-                    product = yield target_buffer.get()
+                # 统一使用 pop() 方法，只能取第一个产品
+                product = yield self.env.process(device.pop(buffer_type))
                 success = True
                 
             # Station (父类)
@@ -275,14 +269,14 @@ class AGV(Vehicle):
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
 
-                if product_id:
-                    for item in device.buffer.items:
-                        if item.id == product_id:
-                            product = item
-                            break
-                else:
-                    product = yield device.buffer.get()
-                success = True
+                # 统一使用 pop() 方法，只能取第一个产品
+                try:
+                    product = yield self.env.process(device.pop())
+                    success = True
+                except ValueError as e:
+                    # 处理正在加工中的产品不能取的情况
+                    feedback = str(e)
+                    return False, feedback, None
                 
             # TripleBufferConveyor
             elif isinstance(device, TripleBufferConveyor):
@@ -290,13 +284,8 @@ class AGV(Vehicle):
                 if device.is_empty(buffer_name):
                     feedback = f"{device.id} {buffer_name}缓冲区为空，无法取货"
                     return False, feedback, None
-                if product_id:
-                    for item in device.get_buffer(buffer_name).items:
-                        if item.id == product_id:
-                            product = item
-                            break
-                else:
-                    product = yield self.env.process(device.pop(buffer_name))
+                # 统一使用 pop() 方法，只能取第一个产品
+                product = yield self.env.process(device.pop(buffer_name))
                 success = True
                 
             # Conveyor
@@ -305,13 +294,8 @@ class AGV(Vehicle):
                     feedback = f"{device.id}缓冲区为空，无法取货"
                     return False, feedback, None
 
-                if product_id:
-                    for item in device.buffer.items:
-                        if item.id == product_id:
-                            product = item
-                            break
-                else:
-                    product = yield self.env.process(device.pop())
+                # 统一使用 pop() 方法，只能取第一个产品
+                product = yield self.env.process(device.pop())
                 success = True
                 
             else:
