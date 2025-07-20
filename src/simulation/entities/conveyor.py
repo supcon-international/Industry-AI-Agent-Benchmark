@@ -79,10 +79,25 @@ class Conveyor(BaseConveyor):
 
     def pop(self):
         """Remove and return a product from the conveyor (may block if empty)."""
-        result = self.buffer.get()
+        product = yield self.buffer.get()
+        
+        # 如果该产品有对应的处理进程，中断并删除它
+        if product.id in self.active_processes:
+            process = self.active_processes[product.id]
+            if process.is_alive:
+                process.interrupt("Product removed by AGV")
+                print(f"[{self.env.now:.2f}] 🚫 Conveyor {self.id}: Interrupted process for product {product.id} (taken by AGV)")
+            del self.active_processes[product.id]
+            
+            # 清理该产品的时间记录
+            if product.id in self.product_start_times:
+                del self.product_start_times[product.id]
+            if product.id in self.product_elapsed_times:
+                del self.product_elapsed_times[product.id]
+        
         # 产品移除后发布状态
         self.publish_status()
-        return result
+        return product
 
     def get_buffer(self):
         return self.buffer
@@ -247,7 +262,14 @@ class Conveyor(BaseConveyor):
                 del self.product_elapsed_times[actual_product.id]
                 
         except simpy.Interrupt as e:
+            print(f"[{self.env.now:.2f}] 🚫 Conveyor {self.id}: Interrupted by{e}: {e.cause}")
             interrupt_reason = str(e.cause) if hasattr(e, 'cause') else "Unknown"
+            
+            # 如果是AGV取走产品的中断，直接返回
+            if "Product removed by AGV" in interrupt_reason:
+                print(f"[{self.env.now:.2f}] 🚚 Conveyor {self.id}: Product {product.id} was taken by AGV, stopping process")
+                # 时间记录已经在pop()中清理了，这里不需要再清理
+                return
             
             # 记录中断时已经传输的时间（阻塞和故障都需要）
             if product.id in self.product_start_times:
@@ -440,10 +462,25 @@ class TripleBufferConveyor(BaseConveyor):
 
     def pop(self, buffer_type="main"):
         """Get product from specified buffer."""
-        result = self.get_buffer(buffer_type).get()
+        product = yield self.get_buffer(buffer_type).get()
+        
+        # 如果是从main_buffer取出且该产品有对应的处理进程，中断并删除它
+        if buffer_type == "main" and product.id in self.active_processes:
+            process = self.active_processes[product.id]
+            if process.is_alive:
+                process.interrupt("Product removed by AGV")
+                print(f"[{self.env.now:.2f}] 🚫 TripleBufferConveyor {self.id}: Interrupted process for product {product.id} (taken by AGV from {buffer_type})")
+            del self.active_processes[product.id]
+            
+            # 清理该产品的时间记录
+            if product.id in self.product_start_times:
+                del self.product_start_times[product.id]
+            if product.id in self.product_elapsed_times:
+                del self.product_elapsed_times[product.id]
+        
         # 产品移除后发布状态
         self.publish_status()
-        return result
+        return product
 
     def is_full(self, buffer_type="main"):
         if buffer_type == "main":
@@ -617,6 +654,14 @@ class TripleBufferConveyor(BaseConveyor):
                 del self.product_elapsed_times[actual_product.id]
 
         except simpy.Interrupt as e:
+            interrupt_reason = str(e.cause) if hasattr(e, 'cause') else "Unknown"
+            
+            # 如果是AGV取走产品的中断，直接返回
+            if "Product removed by AGV" in interrupt_reason:
+                print(f"[{self.env.now:.2f}] 🚚 TripleBufferConveyor {self.id}: Product {product.id} was taken by AGV, stopping process")
+                # 时间记录已经在pop()中清理了，这里不需要再清理
+                return
+            
             print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
             
             # 记录中断时已经传输的时间（阻塞和故障都需要）

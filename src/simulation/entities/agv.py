@@ -296,7 +296,7 @@ class AGV(Vehicle):
                             product = item
                             break
                 else:
-                    product = yield device.pop(buffer_name)
+                    product = yield self.env.process(device.pop(buffer_name))
                 success = True
                 
             # Conveyor
@@ -311,7 +311,7 @@ class AGV(Vehicle):
                             product = item
                             break
                 else:
-                    product = yield device.pop()
+                    product = yield self.env.process(device.pop())
                 success = True
                 
             else:
