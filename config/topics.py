@@ -14,8 +14,8 @@ AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF1/line1/alerts/agv_battery_low"
 
 # Order and KPI topics
 NEW_ORDER_TOPIC = "NLDF1/line1/orders/new"
-KPI_UPDATE_TOPIC = "NLDF1/line1/kpi"
-RESULT_TOPIC = "NLDF1/line1/result"
+KPI_UPDATE_TOPIC = "NLDF1/line1/kpi/status"
+RESULT_TOPIC = "NLDF1/line1/result/status"
 # Agent command topics (published by AI agents)
 AGENT_COMMANDS_TOPIC = "NLDF1/line1/agent/commands"
 # Agent response topics (subscribed by AI agents)
