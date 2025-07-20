@@ -17,27 +17,33 @@ class TopicManager:
         self.root = player_name
         print(f"✅ TopicManager initialized with root topic: '{self.root}'")
 
-    def get_device_status_topic(self, line_id: str, device_id: str) -> str:
+    def get_station_status_topic(self, line_id: str, device_id: str) -> str:
         """Generates topic for device status updates."""
         # device_id from Line class is already line_x_device_y, so we can just use it
-        return f"{self.root}/{line_id}/{device_id}/status"
+        return f"{self.root}/{line_id}/station/{device_id}/status"
 
-    def get_agv_position_topic(self, line_id: str, agv_id: str) -> str:
-        """Generates topic for AGV position updates."""
-        return f"{self.root}/{line_id}/{agv_id}/position"
+    def get_conveyor_status_topic(self, line_id: str, device_id: str) -> str:
+        """Generates topic for device status updates."""
+        # device_id from Line class is already line_x_device_y, so we can just use it
+        return f"{self.root}/{line_id}/conveyor/{device_id}/status"
+
+    def get_warehouse_status_topic(self, device_id: str) -> str:
+        """Generates topic for device status updates."""
+        # device_id from Line class is already line_x_device_y, so we can just use it
+        return f"{self.root}/warehouse/{device_id}/status"
+
+    def get_agv_status_topic(self, line_id: str, agv_id: str) -> str:
+        """Generates topic for AGV status updates."""
+        return f"{self.root}/{line_id}/agv/{agv_id}/status"
 
     def get_order_topic(self) -> str:
         """Generates topic for new order announcements."""
         return f"{self.root}/orders/new"
 
-    def get_fault_alert_topic(self, line_id: str, device_id: str) -> str:
+    def get_fault_alert_topic(self, line_id: str) -> str:
         """Generates topic for fault alerts."""
-        return f"{self.root}/{line_id}/{device_id}/alerts/fault"
+        return f"{self.root}/{line_id}/alerts/fault"
         
     def get_kpi_topic(self) -> str:
         """Generates topic for factory-wide KPI updates."""
         return f"{self.root}/kpi"
-
-    def get_factory_status_topic(self) -> str:
-        """Generates topic for factory-wide status updates."""
-        return f"{self.root}/factory/status"

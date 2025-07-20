@@ -7,13 +7,14 @@ from typing import Tuple, Optional
 from dataclasses import dataclass
 
 from config.schemas import DeviceStatus, DeviceDetailedStatus
+from src.utils.topic_manager import TopicManager
 
 class Device:
     """
     Base class for all simulated devices in the factory.
     Simplified for a basic fault model.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None, interacting_points: list = None):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None, interacting_points: list = []):
         if not isinstance(env, simpy.Environment):
             raise ValueError("env must be a valid simpy.Environment object.")
         
@@ -132,7 +133,7 @@ class BaseConveyor(Device, ABC):
     """
     Abstract base class for different types of conveyors.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], transfer_time: float, mqtt_client=None, interacting_points: list = None):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], transfer_time: float, line_id: str,interacting_points: list = [], topic_manager= None, mqtt_client=None):
         super().__init__(env, id, position, "conveyor", mqtt_client, interacting_points)
 
     @abstractmethod

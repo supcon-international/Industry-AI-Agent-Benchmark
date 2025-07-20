@@ -149,9 +149,9 @@ class OrderGenerator:
             if self.kpi_calculator:
                 self.kpi_calculator.register_new_order(order)
             
-            print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
-            print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
-            print(f"   - Priority: {order.priority.value}")
-            print(f"   - Deadline: {order.deadline:.1f}s (in {order.deadline - self.env.now:.1f}s)")
+            # print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
+            # print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
+            # print(f"   - Priority: {order.priority.value}")
+            # print(f"   - Deadline: {order.deadline:.1f}s (in {order.deadline - self.env.now:.1f}s)")
         except Exception as e:
             print(f"[{self.env.now:.2f}] ❌ Failed to publish order: {e}") 

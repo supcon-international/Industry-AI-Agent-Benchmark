@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 from src.simulation.line import Line
 from src.game_logic.kpi_calculator import KPICalculator
 from src.utils.mqtt_client import MQTTClient
-from src.utils.config_loader import load_factory_config
 from src.simulation.entities.warehouse import Warehouse, RawMaterial
 from src.game_logic.order_generator import OrderGenerator
 from src.utils.topic_manager import TopicManager
@@ -22,18 +21,18 @@ class Factory:
         self.no_faults_mode = no_faults
         
         # Read player name from environment variable
-        player_name = os.getenv("PLAYER_NAME", "NLDF_DEFAULT")
+        player_name = os.getenv("TOPIC_ROOT", "NLDF_DEFAULT")
         self.topic_manager = TopicManager(player_name)
 
         self.lines: Dict[str, Line] = {}
         self.warehouse: Warehouse
         self.order_generator: OrderGenerator
+        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.topic_manager)
 
         self.all_devices = {}
         self._create_warehouse_order_generator()
         self._create_production_lines()
 
-        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.topic_manager)
 
     def _create_production_lines(self):
         """Creates all production lines based on the layout configuration."""
@@ -48,7 +47,8 @@ class Factory:
                 warehouse=self.warehouse,
                 raw_material=self.raw_material,
                 order_generator=self.order_generator,
-                no_faults=self.no_faults_mode
+                no_faults=self.no_faults_mode,
+                kpi_calculator=self.kpi_calculator
             )
             self.lines[line_name] = line
             self.all_devices.update(line.all_devices)
@@ -83,6 +83,4 @@ class Factory:
 
     def run(self, until: int):
         """Runs the simulation for a given duration."""
-        print(f"--- Factory simulation starting for {until} seconds with {len(self.lines)} production lines ---")
         self.env.run(until=until)
-        print("--- Factory simulation finished ---")

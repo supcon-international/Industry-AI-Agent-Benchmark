@@ -7,6 +7,7 @@ from src.simulation.entities.base import Device
 from src.simulation.entities.product import Product
 from config.schemas import WarehouseStatus
 from config.topics import get_warehouse_status_topic
+from src.utils.topic_manager import TopicManager
 
 class BaseWarehouse(Device):
     """Base class for all warehouse types, inheriting from Device."""

@@ -630,12 +630,12 @@ class AGV(Vehicle):
             battery_level=self.battery_level,
             message=message
         )
-        topic = self.topic_manager.get_device_status_topic(self.line_id, self.id)
+        topic = self.topic_manager.get_agv_status_topic(self.line_id, self.id)
         self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=False)
 
     def report_battery_low(self, battery_level: float):
         """report battery low"""
-        topic = self.topic_manager.get_fault_alert_topic(self.line_id, self.id)
+        topic = self.topic_manager.get_fault_alert_topic(self.line_id)
         payload = {
             "device_id": self.id,
             "fault_type": "battery_low",

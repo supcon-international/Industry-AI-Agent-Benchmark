@@ -114,7 +114,7 @@ class Station(Device):
             stats=self.stats,
             output_buffer=[]  # 普通工站没有 output_buffer
         )
-        topic = self.topic_manager.get_device_status_topic(self.line_id, self.id)
+        topic = self.topic_manager.get_station_status_topic(self.line_id, self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def run(self):

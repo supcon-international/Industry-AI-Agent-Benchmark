@@ -246,7 +246,7 @@ class FaultSystem:
         )
         
         if self.mqtt_client and self.topic_manager and self.line_id:
-            topic = self.topic_manager.get_fault_alert_topic(self.line_id, device_id)
+            topic = self.topic_manager.get_fault_alert_topic(self.line_id)
             self.mqtt_client.publish(topic, alert_data.model_dump_json())
 
     def _send_recovery_alert(self, device_id: str, last_symptom: str):
@@ -262,7 +262,7 @@ class FaultSystem:
         )
         
         if self.mqtt_client and self.topic_manager and self.line_id:
-            topic = self.topic_manager.get_fault_alert_topic(self.line_id, device_id)
+            topic = self.topic_manager.get_fault_alert_topic(self.line_id)
             self.mqtt_client.publish(topic, alert_data.model_dump_json())
 
     def force_clear_fault(self, device_id: str) -> bool:

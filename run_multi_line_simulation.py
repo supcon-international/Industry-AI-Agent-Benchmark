@@ -10,27 +10,128 @@ from src.utils.mqtt_client import MQTTClient
 from src.simulation.factory_multi import Factory
 from src.utils.config_loader import load_factory_config
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
+import logging
+from config.settings import LOG_LEVEL
+from src.agent_interface.command_handler import CommandHandler
+from typing import Optional
+import time
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class MultiLineFactorySimulation:
+    """
+    Main orchestrator class that combines all components of the factory simulation.
+    """
+    
+    def __init__(self):
+        self.factory: Optional[Factory] = None
+        self.mqtt_client: Optional[MQTTClient] = None
+        self.command_handler: Optional[CommandHandler] = None
+        self.running = False
+
+    def initialize(self):
+        """Initialize all simulation components."""
+        logger.info("🏭 Initializing Multi-Line Factory Simulation...")
+        
+        # Create MQTT client first
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP")
+        
+        # Connect to MQTT
+        self.mqtt_client.connect()
+        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
+
+        # Wait for MQTT client to be fully connected
+        max_retries = 20
+        retry_interval = 0.5
+        for i in range(max_retries):
+            if self.mqtt_client.is_connected():
+                logger.info("✅ MQTT client is fully connected.")
+                break
+            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+            time.sleep(retry_interval)
+        else:
+            logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
+            raise ConnectionError("MQTT connection failed.")
+
+        try:
+            layout_config = load_factory_config('factory_layout_multi.yml')
+            print(f"✅ Successfully loaded multi-line factory configuration from layout_config")
+        except Exception as e:
+            print(f"❌ Failed to load multi-line factory configuration: {e}")
+            raise e
+        
+        self.factory = Factory(layout_config, self.mqtt_client, no_faults=False) # no_faults for cleaner testing
+        
+        # Create the factory with MQTT client
+        # self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
+        logger.info(f"✅ Factory created with {len(self.factory.lines)} lines")
+        
+        # # Create command handler (this will start listening for commands)
+        # self.command_handler = CommandHandler(self.factory, self.mqtt_client)
+        # logger.info("🎯 Command handler initialized and listening for agent commands")
+    
+    def run(self, duration: Optional[int] = None):
+        """Run the simulation."""
+        if self.factory is None:
+            logger.error("❌ Factory is not initialized. Call initialize() first.")
+            return
+
+        logger.info("🚀 Starting Factory Simulation...")
+        self.running = True
+        
+        try:
+            if duration:
+                logger.info(f"⏱️  Running simulation for {duration} seconds")
+                self.factory.run(until=duration)
+                # For fixed duration, print scores after normal completion
+                # self.factory.print_final_scores()
+            else:
+                logger.info("🔄 Running simulation indefinitely (Ctrl+C to stop)")
+                while self.running:
+                    # Run simulation for 1 second at a time
+                    self.factory.run(until=int(self.factory.env.now) + 1)
+                    time.sleep(1)  # Small delay to prevent busy waiting
+                    
+        except KeyboardInterrupt:
+            logger.info("🛑 Simulation interrupted by user")
+            # Scores will be printed in shutdown()
+        except Exception as e:
+            logger.error(f"❌ Simulation error: {e}")
+        finally:
+            # For indefinite runs or errors, print scores during shutdown
+            if not duration:
+                self.shutdown()
+            else:
+                # For fixed duration runs, just clean up without printing scores again
+                logger.info("🧹 Cleaning up resources...")
+                self.running = False
+                if self.mqtt_client:
+                    self.mqtt_client.disconnect()
+                logger.info("👋 Factory Simulation stopped")
+
+    def shutdown(self):
+        """Clean up resources."""
+        logger.info("🧹 Shutting down Factory Simulation...")
+        self.running = False
+        
+        # # Print final scores when shutting down
+        # if self.factory:
+        #     self.factory.print_final_scores()
+        
+        if self.mqtt_client:
+            self.mqtt_client.disconnect()
+            
+        logger.info("👋 Factory Simulation stopped")
 
 def run_simulation_multi():
     """Runs the multi-line factory simulation."""
-    try:
-        layout_config = load_factory_config('factory_layout_multi.yml')
-        print(f"✅ Successfully loaded multi-line factory configuration from {layout_config}")
-    except Exception as e:
-        print(f"❌ Failed to load multi-line factory configuration: {e}")
-        raise e
-
-    # MQTT Client setup (optional)
-    mqtt_client = None
-    mqtt_client = MQTTClient(host=MQTT_BROKER_HOST, port=MQTT_BROKER_PORT, client_id="factory_multi_sim")
-    mqtt_client.connect()
-
-    # Create and run the multi-line factory simulation
-    factory = Factory(layout_config, mqtt_client, no_faults=False) # no_faults for cleaner testing
-    
-    print("--- Starting Multi-Line Factory Simulation ---")
-    factory.run(until=1000) # Run for a short duration for testing
-    print("--- Multi-Line Factory Simulation Finished ---")
+    simulation = MultiLineFactorySimulation()
+    simulation.initialize()
+    simulation.run()  # Run indefinitely
 
 if __name__ == '__main__':
     run_simulation_multi()
