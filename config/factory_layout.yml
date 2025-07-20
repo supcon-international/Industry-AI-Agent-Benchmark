@@ -40,7 +40,7 @@ stations:
   - id: "QualityCheck"
     # name: "质量检测站"
     position: [75, 20]
-    buffer_size: 2
+    buffer_size: 4
     processing_times:
       P1: [5, 5] #[15, 25]
       P2: [5, 5] #[20, 30]

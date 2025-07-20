@@ -34,7 +34,7 @@ order_generator:
   theoretical_production_times: {P1: 160, P2: 200, P3: 250}
 
 production_lines:
-  - name: "line_1"
+  - name: "line1"
     stations:
       - id: "StationA"
         position: [15, 20]
@@ -146,7 +146,7 @@ production_lines:
         AGV_1: ["StationA", "StationB"]
         AGV_2: ["StationB", "StationC"]
 
-  - name: "line_2"
+  - name: "line2"
     stations:
       - id: "StationA"
         position: [15, 60] # Changed Y coordinate
@@ -241,7 +241,7 @@ production_lines:
         AGV_1: ["StationA", "StationB"]
         AGV_2: ["StationB", "StationC"]
 
-  - name: "line_3"
+  - name: "line3"
     stations:
       - id: "StationA"
         position: [15, 100] # Changed Y coordinate

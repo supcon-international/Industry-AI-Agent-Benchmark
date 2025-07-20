@@ -1,5 +1,6 @@
 # src/utils/topic_manager.py
 import os
+from typing import Dict, Optional
 
 class TopicManager:
     """
@@ -47,3 +48,31 @@ class TopicManager:
     def get_kpi_topic(self) -> str:
         """Generates topic for factory-wide KPI updates."""
         return f"{self.root}/kpi"
+
+    def get_agent_command_topic_wildcard(self) -> str:
+        """Generates a wildcard topic for agent commands for all lines."""
+        return f"{self.root}/command/+"
+
+    def get_agent_command_topic(self, line_id: str) -> str:
+        """Generates the specific command topic for a given line."""
+        return f"{self.root}/command/{line_id}"
+
+    def parse_agent_command_topic(self, topic: str) -> Optional[Dict[str, str]]:
+        """
+        Parses an agent command topic to extract line_id.
+        Expected format: {root}/command/{line_id}
+        """
+        parts = topic.split('/')
+        if len(parts) == 3 and parts[0] == self.root and parts[1] == "command":
+            return {
+                "line_id": parts[2]
+            }
+        return None
+
+    def get_agent_response_topic(self, line_id: Optional[str]) -> str:
+        """Generates the response topic for agent commands."""
+        if line_id:
+            return f"{self.root}/response/{line_id}"
+        else:
+            return f"{self.root}/response/general"
+

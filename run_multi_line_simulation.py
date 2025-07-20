@@ -1,6 +1,8 @@
 # run_multi_line_simulation.py
 import os
 import sys
+import argparse
+import threading
 
 # Add the project root to Python path
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -12,7 +14,8 @@ from src.utils.config_loader import load_factory_config
 from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 import logging
 from config.settings import LOG_LEVEL
-from src.agent_interface.command_handler import CommandHandler
+from src.agent_interface.multi_line_command_handler import MultiLineCommandHandler
+from src.user_input_multi import menu_input_thread
 from typing import Optional
 import time
 
@@ -30,7 +33,7 @@ class MultiLineFactorySimulation:
     def __init__(self):
         self.factory: Optional[Factory] = None
         self.mqtt_client: Optional[MQTTClient] = None
-        self.command_handler: Optional[CommandHandler] = None
+        self.command_handler: Optional[MultiLineCommandHandler] = None
         self.running = False
 
     def initialize(self):
@@ -70,9 +73,9 @@ class MultiLineFactorySimulation:
         # self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
         logger.info(f"✅ Factory created with {len(self.factory.lines)} lines")
         
-        # # Create command handler (this will start listening for commands)
-        # self.command_handler = CommandHandler(self.factory, self.mqtt_client)
-        # logger.info("🎯 Command handler initialized and listening for agent commands")
+        # Create command handler (this will start listening for commands)
+        self.command_handler = MultiLineCommandHandler(self.factory, self.mqtt_client, self.factory.topic_manager)
+        logger.info("🎯 Command handler initialized and listening for agent commands")
     
     def run(self, duration: Optional[int] = None):
         """Run the simulation."""
@@ -129,8 +132,21 @@ class MultiLineFactorySimulation:
 
 def run_simulation_multi():
     """Runs the multi-line factory simulation."""
+    # parser = argparse.ArgumentParser(description="SUPCON Multi-Line Factory Simulation Launcher")
+    # parser.add_argument(
+    #     "--menu",
+    #     action="store_true",
+    #     help="Enable the interactive menu for manual control."
+    # )
+    # args = parser.parse_args()
+
     simulation = MultiLineFactorySimulation()
     simulation.initialize()
+    
+    # if args.menu:
+    #     threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()
+    #     logger.info("Interactive menu enabled. Type commands in the console.")
+
     simulation.run()  # Run indefinitely
 
 if __name__ == '__main__':
