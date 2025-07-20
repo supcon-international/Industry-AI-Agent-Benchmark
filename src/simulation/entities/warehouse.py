@@ -42,10 +42,26 @@ class BaseWarehouse(Device):
         """Return the current number of items in the buffer."""
         return len(self.buffer.items)
     
-    def pop(self):
-        """Remove and return the first product from the warehouse buffer."""
-        product = yield self.buffer.get()
-        
+    def pop(self, product_id: Optional[str] = None):
+        """
+        Remove and return a product from the warehouse buffer.
+        If product_id is specified, remove the product with that id.
+        Otherwise, remove the first product in the buffer.
+        """
+        if product_id:
+            # Try to find and remove the product with the specified id
+            for idx, p in enumerate(self.buffer.items):
+                if p.id == product_id:
+                    product = self.buffer.items.pop(idx)
+                    print(f"[{self.env.now:.2f}] 📤 {self.id}: Product {product.id} taken from warehouse buffer.")
+                    break
+            else:
+                # If not found, raise an error
+                raise ValueError(f"Product with id {product_id} not found in warehouse buffer.")
+        else:
+            product = yield self.buffer.get()
+            print(f"[{self.env.now:.2f}] 📤 {self.id}: Default Product taken from warehouse buffer.")
+
         # 发布状态更新
         msg = f"Product {product.id} taken from {self.id} by AGV"
         print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
