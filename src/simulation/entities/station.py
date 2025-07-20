@@ -7,6 +7,7 @@ from config.schemas import DeviceStatus, StationStatus
 from src.simulation.entities.base import Device
 from src.simulation.entities.product import Product
 from src.utils.topic_manager import TopicManager
+from config.topics import get_station_status_topic
 
 class Station(Device):
     """
@@ -35,14 +36,14 @@ class Station(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        topic_manager: TopicManager,
-        line_id: str,
         buffer_size: int = 1,
         processing_times: Dict[str, Tuple[int, int]] = {},
         downstream_conveyor=None,
         mqtt_client=None,
         interacting_points: list = [],
-        kpi_calculator=None  # Injected dependency
+        kpi_calculator=None,  # Injected dependency
+        topic_manager: Optional[TopicManager] = None,
+        line_id: Optional[str] = None
     ):
         super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client, interacting_points=interacting_points)
         self.topic_manager = topic_manager
@@ -114,7 +115,10 @@ class Station(Device):
             stats=self.stats,
             output_buffer=[]  # 普通工站没有 output_buffer
         )
-        topic = self.topic_manager.get_station_status_topic(self.line_id, self.id)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_station_status_topic(self.line_id, self.id)
+        else:
+            topic = get_station_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def run(self):

@@ -13,7 +13,7 @@ class Conveyor(BaseConveyor):
     Conveyor with limited capacity, simulating a production line conveyor belt.
     Now uses simpy.Store for event-driven simulation and supports auto-transfer.
     """
-    def __init__(self, env, id, capacity, position: Tuple[int, int], interacting_points: list, topic_manager: TopicManager, line_id: str, transfer_time: float =5.0, mqtt_client=None, kpi_calculator=None):
+    def __init__(self, env, id, capacity, position: Tuple[int, int], interacting_points: list, transfer_time: float =5.0, mqtt_client=None, kpi_calculator=None, topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None):
         super().__init__(env, id, position, transfer_time, line_id, interacting_points, topic_manager, mqtt_client)
         self.capacity = capacity
         self.buffer = simpy.Store(env, capacity=capacity)
@@ -63,7 +63,10 @@ class Conveyor(BaseConveyor):
             upper_buffer=None,
             lower_buffer=None
         )
-        topic = self.topic_manager.get_conveyor_status_topic(self.line_id, self.id)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_conveyor_status_topic(self.line_id, self.id)
+        else:
+            topic = get_conveyor_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def set_downstream_station(self, station):
@@ -388,7 +391,7 @@ class TripleBufferConveyor(BaseConveyor):
     - lower_buffer: for P3 products, AGV pickup
     All buffers use simpy.Store for event-driven simulation.
     """
-    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], topic_manager: TopicManager, line_id: str, transfer_time: float =5.0, mqtt_client=None, interacting_points: list = [], kpi_calculator=None):
+    def __init__(self, env, id, main_capacity, upper_capacity, lower_capacity, position: Tuple[int, int], transfer_time: float =5.0, mqtt_client=None, interacting_points: list = [], kpi_calculator=None, topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None):
         super().__init__(env, id, position, transfer_time, line_id, interacting_points, topic_manager, mqtt_client)
         self.topic_manager = topic_manager
         self.line_id = line_id
@@ -438,7 +441,10 @@ class TripleBufferConveyor(BaseConveyor):
             lower_buffer=[p.id for p in self.lower_buffer.items],
             message=message,
         )
-        topic = self.topic_manager.get_conveyor_status_topic(self.line_id, self.id)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_conveyor_status_topic(self.line_id, self.id)
+        else:
+            topic = get_conveyor_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def set_downstream_station(self, station):

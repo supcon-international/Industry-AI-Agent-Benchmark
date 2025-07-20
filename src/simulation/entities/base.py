@@ -8,13 +8,14 @@ from dataclasses import dataclass
 
 from config.schemas import DeviceStatus, DeviceDetailedStatus
 from src.utils.topic_manager import TopicManager
+from config.topics import DEVICE_ALERT_TOPIC
 
 class Device:
     """
     Base class for all simulated devices in the factory.
     Simplified for a basic fault model.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None, interacting_points: list = []):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], device_type: str = "generic", mqtt_client=None, interacting_points: list = [], topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None):
         if not isinstance(env, simpy.Environment):
             raise ValueError("env must be a valid simpy.Environment object.")
         
@@ -24,6 +25,8 @@ class Device:
         self.position = position
         self.mqtt_client = mqtt_client
         self.interacting_points = interacting_points if interacting_points is not None else []
+        self.topic_manager = topic_manager
+        self.line_id = line_id
         
         # 设备状态和故障相关属性
         self.status = DeviceStatus.IDLE
@@ -82,37 +85,32 @@ class Device:
             load_weight=self._specific_attributes.get('load_weight', 0.0)
         )
     
+    def _get_fault_topic(self) -> str:
+        """Generates the correct fault topic based on context."""
+        if self.topic_manager and self.line_id:
+            return self.topic_manager.get_fault_alert_topic(self.line_id)
+        else:
+            return DEVICE_ALERT_TOPIC
+
     def report_buffer_full(self, buffer_name: str):
         """报告缓冲区满"""
-        self._publish_fault_event("buffer_full", {
-            "device_id": self.id,
-            "buffer_name": buffer_name,
-            "timestamp": self.env.now,
-            "severity": "warning"
-        })
+        topic = self._get_fault_topic()
+        payload = {
+            "event_type": "buffer_full",
+            "data": {
+                "device_id": self.id,
+                "buffer_name": buffer_name,
+                "timestamp": self.env.now,
+                "severity": "warning"
+            }
+        }
+        self._publish_fault_event(topic, payload)
         print(f"[{self.env.now:.2f}] 📦 {self.id}: 缓冲区满告警 ({buffer_name})")
 
-
-    def report_device_error(self, error_type: str, description: str):
-        """报告设备错误"""
-        self._publish_fault_event("device_error", {
-            "device_id": self.id,
-            "error_type": error_type,
-            "description": description,
-            "timestamp": self.env.now,
-            "severity": "error"
-        })
-        print(f"[{self.env.now:.2f}] ❌ {self.id}: 设备错误 ({error_type}: {description})")
-
-    def _publish_fault_event(self, event_type: str, event_data: dict):
+    def _publish_fault_event(self, topic: str, payload: dict):
         """发布故障事件到MQTT"""
         if self.mqtt_client:
-            topic = f"factory/faults/{self.id}"
-            message = {
-                "event_type": event_type,
-                "data": event_data
-            }
-            self.mqtt_client.publish(topic, message)
+            self.mqtt_client.publish(topic, payload)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id='{self.id}', status='{self.status.value}')"
@@ -133,7 +131,7 @@ class BaseConveyor(Device, ABC):
     """
     Abstract base class for different types of conveyors.
     """
-    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], transfer_time: float, line_id: str,interacting_points: list = [], topic_manager= None, mqtt_client=None):
+    def __init__(self, env: simpy.Environment, id: str, position: Tuple[int, int], transfer_time: float, line_id: Optional[str] = None, interacting_points: list = [], topic_manager: Optional[TopicManager] = None, mqtt_client=None):
         super().__init__(env, id, position, "conveyor", mqtt_client, interacting_points)
 
     @abstractmethod

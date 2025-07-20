@@ -13,8 +13,8 @@ BUFFER_FULL_ALERT_TOPIC = "NLDF/line1/alerts/buffer_full"
 AGV_BATTERY_LOW_ALERT_TOPIC = "NLDF/line1/alerts/agv_battery_low"
 
 # Order and KPI topics
-NEW_ORDER_TOPIC = "NLDF/line1/orders/new"
-KPI_UPDATE_TOPIC = "NLDF/{line}/kpi/update"
+NEW_ORDER_TOPIC = "NLDF/line1/orders"
+KPI_UPDATE_TOPIC = "NLDF/line1/kpi"
 
 # Agent command topics (published by AI agents)
 AGENT_COMMANDS_TOPIC = "NLDF/line1/agent/commands"

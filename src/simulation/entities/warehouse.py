@@ -19,12 +19,16 @@ class BaseWarehouse(Device):
         position: Tuple[int, int],
         mqtt_client=None,
         interacting_points: list = [],
+        topic_manager: Optional[TopicManager] = None,
+        line_id: Optional[str] = None,
         **kwargs # Absorb other config values
     ):
         super().__init__(env, id, position, device_type="warehouse", mqtt_client=mqtt_client)
         self.buffer = simpy.Store(env)
         self.interacting_points = interacting_points
         self.stats = {}  # To be overridden by subclasses
+        self.topic_manager = topic_manager
+        self.line_id = line_id
 
     def publish_status(self, message: str = "Warehouse is ready"):
         """Publishes the current status of the warehouse to MQTT."""
@@ -37,7 +41,11 @@ class BaseWarehouse(Device):
             buffer=[p.id for p in self.buffer.items],
             stats=self.stats
         )
-        self.mqtt_client.publish(get_warehouse_status_topic(self.id), status_data.model_dump_json(), retain=False)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_warehouse_status_topic(self.id)
+        else:
+            topic = get_warehouse_status_topic(self.id)
+        self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def get_buffer_level(self) -> int:
         """Return the current number of items in the buffer."""

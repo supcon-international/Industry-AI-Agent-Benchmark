@@ -462,7 +462,11 @@ class KPICalculator:
         """Publish KPI update to MQTT."""
         try:
             if self.mqtt_client:
-                topic = self.topic_manager.get_kpi_topic()
+                if self.topic_manager:
+                    topic = self.topic_manager.get_kpi_topic()
+                else:
+                    from config.topics import KPI_UPDATE_TOPIC
+                    topic = KPI_UPDATE_TOPIC
                 self.mqtt_client.publish(topic, kpi_update.model_dump_json())
                 print(f"[{self.env.now:.2f}] 📊 KPI Update published")
         except Exception as e:

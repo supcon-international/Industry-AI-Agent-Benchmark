@@ -38,8 +38,6 @@ class AGV(Vehicle):
         position: Tuple[int, int],
         path_points: Dict[str, Tuple[int, int]],
         speed_mps: float,
-        topic_manager: TopicManager,
-        line_id: str,
         payload_capacity: int = 1,
         operation_time: float = 1.0,
         low_battery_threshold: float = 5.0,  # 低电量阈值
@@ -49,7 +47,9 @@ class AGV(Vehicle):
         battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
         fault_system=None, # Injected dependency
         mqtt_client=None,
-        kpi_calculator=None
+        kpi_calculator=None,
+        topic_manager: Optional[TopicManager] = None,
+        line_id: Optional[str] = None
     ):
         if position not in path_points.values():
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
@@ -96,9 +96,10 @@ class AGV(Vehicle):
         self.battery_level = max(0.0, self.battery_level - amount)
         
         if old_level > self.low_battery_threshold and self.battery_level <= self.low_battery_threshold:
+            msg = f"[{self.env.now:.2f}] 🔋 {self.id}: 电量过低！当前电量: {self.battery_level:.1f}% (原因: {reason})"
             # 电量首次降到阈值以下时告警
-            self.report_battery_low(self.battery_level)
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: 电量过低！当前电量: {self.battery_level:.1f}% (原因: {reason})")
+            self.publish_status(msg)
+            print(msg)
 
     def is_battery_low(self) -> bool:
         """检查电量是否过低"""
@@ -358,9 +359,6 @@ class AGV(Vehicle):
         product = None
         feedback = ""
         success = False
-        
-        # Calculate process time
-        time_out = getattr(device, 'processing_time', 10) / 5 * action_time_factor
         
         try:
             # Check if AGV has products
@@ -642,18 +640,9 @@ class AGV(Vehicle):
             battery_level=self.battery_level,
             message=message
         )
-        topic = self.topic_manager.get_agv_status_topic(self.line_id, self.id)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_agv_status_topic(self.line_id, self.id)
+        else:
+            from config.topics import get_agv_status_topic
+            topic = get_agv_status_topic(self.id)
         self.mqtt_client.publish(topic, status_payload.model_dump_json(), retain=False)
-
-    def report_battery_low(self, battery_level: float):
-        """report battery low"""
-        topic = self.topic_manager.get_fault_alert_topic(self.line_id)
-        payload = {
-            "device_id": self.id,
-            "fault_type": "battery_low",
-            "battery_level": battery_level,
-            "timestamp": self.env.now,
-            "severity": "warning"
-        }
-        self._publish_fault_event(topic, payload)
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low warning ({battery_level:.1f}%)")

@@ -31,15 +31,15 @@ class QualityChecker(Station):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
-        topic_manager: TopicManager,
-        line_id: str,
         buffer_size: int = 1,
         processing_times: Dict[str, Tuple[int, int]] = {},
         pass_threshold: float = 80.0,  # 合格阈值
         scrap_threshold: float = 60.0,  # 报废阈值
         output_buffer_capacity: int = 5,  # 新增，output buffer容量
         mqtt_client=None,
-        interacting_points: list = []
+        interacting_points: list = [],
+        topic_manager: Optional[TopicManager] = None,
+        line_id: Optional[str] = None
     ):
         # 默认检测时间
         if processing_times is None:
@@ -56,7 +56,7 @@ class QualityChecker(Station):
         self.output_buffer_capacity = output_buffer_capacity
         self.output_buffer = simpy.Store(env, capacity=output_buffer_capacity)
         
-        super().__init__(env, id, position, topic_manager, line_id, buffer_size, processing_times, downstream_conveyor=None, mqtt_client=mqtt_client, interacting_points=interacting_points)
+        super().__init__(env, id, position, topic_manager=topic_manager, line_id=line_id, buffer_size=buffer_size, processing_times=processing_times, downstream_conveyor=None, mqtt_client=mqtt_client, interacting_points=interacting_points)
         
         # 简单统计
         self.stats = {
@@ -85,7 +85,11 @@ class QualityChecker(Station):
             output_buffer=[p.id for p in self.output_buffer.items],
             message=message,
         )
-        topic = self.topic_manager.get_station_status_topic(self.line_id, self.id)
+        if self.topic_manager and self.line_id:
+            topic = self.topic_manager.get_station_status_topic(self.line_id, self.id)
+        else:
+            from config.topics import get_station_status_topic
+            topic = get_station_status_topic(self.id)
         self.mqtt_client.publish(topic, status_data.model_dump_json(), retain=False)
 
     def process_product(self, product: Product):
@@ -220,9 +224,6 @@ class QualityChecker(Station):
         # Set product status to scrapped
         product.quality_score = 0.0
         product.quality_status = QualityStatus.SCRAP
-        
-        # Report scrapped product through base class
-        self.report_device_error("product_scrap", f"Product {product.id} scrapped due to {reason}")
         
         # Simulate scrap handling time
         yield self.env.timeout(2.0)
