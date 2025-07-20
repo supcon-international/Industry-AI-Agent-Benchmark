@@ -1,7 +1,7 @@
 import json
 from src.simulation.factory import Factory
 from src.utils.mqtt_client import MQTTClient
-from config.topics import AGENT_COMMANDS_TOPIC
+from config.topics import AGENT_COMMANDS_TOPIC, RESULT_TOPIC
 from src.game_logic.fault_system import FaultType
 
 def get_device_map(factory: Factory) -> dict:
@@ -35,8 +35,9 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory):
         print("3. 卸载")
         print("4. 充电")
         print("5. 注入故障")
-        print("6. 退出")
-        op = input("> ").strip()
+        print("6. 查看结果 (result)")
+        print("7. 退出")
+        op = input("> ").strip().lower()
 
         if op == "1":
             agv_id_short = input("请输入AGV编号 (e.g., 1, 2): ").strip()
@@ -132,7 +133,51 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory):
             print(f"已注入故障: {device_id} {fault_type.name} {fault_duration}s")
             continue
 
-        elif op == "6":
+        elif op == "6" or op == "result":
+            # 获取并显示最终结果
+            if factory.kpi_calculator:
+                final_scores = factory.kpi_calculator.get_final_score()
+                
+                # 打印到终端（与factory.print_final_scores()相同格式）
+                print(f"\n{'='*60}")
+                print("🏆 最终竞赛得分")
+                print(f"{'='*60}")
+                print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
+                print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
+                print(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
+                print(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
+                print(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
+                print(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
+                print(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
+                print(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
+                print(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
+                print(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
+                print(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
+                print(f"\n总得分: {final_scores['total_score']:.2f}")
+                print(f"{'='*60}\n")
+                
+                # 发布得分到MQTT（不包含原始指标）
+                result_topic = RESULT_TOPIC
+                
+
+                scores_only = {
+                    "total_score": final_scores['total_score'],
+                    "efficiency_score": final_scores['efficiency_score'],
+                    "efficiency_components": str(final_scores['efficiency_components']),
+                    "quality_cost_score": final_scores['quality_cost_score'],
+                    "quality_cost_components": str(final_scores['quality_cost_components']),
+                    "agv_score": final_scores['agv_score'],
+                    "agv_components": str(final_scores['agv_components'])
+                }
+                result_json = json.dumps(scores_only)
+            
+                mqtt_client.publish(result_topic, result_json)
+                print(f"✅ 结果已发布到 {result_topic}")
+            else:
+                print("❌ KPI计算器未初始化")
+            continue
+            
+        elif op == "7":
             print("退出菜单输入线程。")
             break
         else:

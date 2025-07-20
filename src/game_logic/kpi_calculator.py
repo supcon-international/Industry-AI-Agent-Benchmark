@@ -342,6 +342,15 @@ class KPICalculator:
     def update_device_utilization(self, device_id: str, total_time: float):
         """Update device total time for utilization calculation."""
         self.stats.device_total_time[device_id] = total_time
+        # Ensure device has a working_time entry to prevent KeyError
+        if device_id not in self.stats.device_working_time:
+            self.stats.device_working_time[device_id] = 0.0
+    
+    def track_device_working_time(self, device_id: str, duration: float):
+        """Track actual working time for a device"""
+        if device_id not in self.stats.device_working_time:
+            self.stats.device_working_time[device_id] = 0.0
+        self.stats.device_working_time[device_id] += duration
 
     def calculate_current_kpis(self) -> KPIUpdate:
         """Calculate current KPI values according to PRD 3.4 Section 2.8 formulas."""
@@ -358,7 +367,7 @@ class KPICalculator:
         # 2. 加权平均生产周期 (实际时间与理论时间的比率)
         average_production_cycle = (
             (self.stats.weighted_production_cycle_sum / self.stats.quality_passed_products)
-            if self.stats.quality_passed_products > 0 else 1.0
+            if self.stats.quality_passed_products > 0 else 0.0  # No production = 0 efficiency
         )
         
         # 3. 按时交付率 (这个指标与订单完成率重复，可用于额外分析)
@@ -397,7 +406,7 @@ class KPICalculator:
         total_charges = self.stats.agv_active_charges + self.stats.agv_passive_charges
         charge_strategy_efficiency = (
             (self.stats.agv_active_charges / total_charges * 100)
-            if total_charges > 0 else 100.0
+            if total_charges > 0 else 0.0  # No charging activity = 0 efficiency
         )
         
         # AGV能效比 (完成任务数 / 总充电时间)
@@ -427,28 +436,28 @@ class KPICalculator:
         )
         
         return KPIUpdate(
-            timestamp=current_time,
+            timestamp=round(current_time, 2),
             
             # Production Efficiency (40%)
-            order_completion_rate=order_completion_rate,
-            average_production_cycle=average_production_cycle,
-            on_time_delivery_rate=on_time_delivery_rate,
-            device_utilization=average_device_utilization,
+            order_completion_rate=round(order_completion_rate, 2),
+            average_production_cycle=round(average_production_cycle, 2),
+            on_time_delivery_rate=round(on_time_delivery_rate, 2),
+            device_utilization=round(average_device_utilization, 2),
             
             # Quality Metrics
-            first_pass_rate=first_pass_rate,
+            first_pass_rate=round(first_pass_rate, 2),
             
             # Cost Control (30%)
-            total_production_cost=total_production_cost,
-            material_costs=self.stats.material_costs,
-            energy_costs=self.stats.energy_costs,
-            maintenance_costs=self.stats.maintenance_costs,
-            scrap_costs=self.stats.scrap_costs,
+            total_production_cost=round(total_production_cost, 2),
+            material_costs=round(self.stats.material_costs, 2),
+            energy_costs=round(self.stats.energy_costs, 2),
+            maintenance_costs=round(self.stats.maintenance_costs, 2),
+            scrap_costs=round(self.stats.scrap_costs, 2),
             
             # AGV Efficiency Metrics
-            charge_strategy_efficiency=charge_strategy_efficiency,
-            agv_energy_efficiency=agv_energy_efficiency,
-            agv_utilization=average_agv_utilization,
+            charge_strategy_efficiency=round(charge_strategy_efficiency, 2),
+            agv_energy_efficiency=round(agv_energy_efficiency, 2),
+            agv_utilization=round(average_agv_utilization, 2),
             
             # Raw Counts
             total_orders=self.stats.total_orders,
@@ -504,7 +513,7 @@ class KPICalculator:
         # 包含：订单完成率、加权平均生产周期、设备利用率
         
         # 生产周期评分：只有在有产品生产时才计算
-        if self.stats.quality_passed_products > 0:
+        if self.stats.quality_passed_products > 0 and kpis.average_production_cycle > 0:
             # 比率越接近1越好（实际时间接近理论时间）
             production_cycle_score = min(100, 100 / max(1, kpis.average_production_cycle))
         else:
@@ -540,8 +549,8 @@ class KPICalculator:
                 # 有成本但没有产出，效率为0
                 cost_efficiency = 0
             else:
-                # 没有成本也没有产出，给予基础分50
-                cost_efficiency = 50
+                # 没有成本也没有产出，给予0分
+                cost_efficiency = 0
         
         # 质量与成本评分 (30%)
         # 包含：一次通过率和总生产成本
