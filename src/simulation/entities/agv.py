@@ -41,12 +41,13 @@ class AGV(Vehicle):
         topic_manager: TopicManager,
         line_id: str,
         payload_capacity: int = 1,
-        low_battery_threshold: float = 5.0,
-        charging_point: str = "P10",
-        charging_speed: float = 3.33,
-        battery_consumption_per_meter: float = 0.1,
-        battery_consumption_per_action: float = 0.5,
-        fault_system=None,
+        operation_time: float = 1.0,
+        low_battery_threshold: float = 5.0,  # 低电量阈值
+        charging_point: str = "P10",  # 充电点坐标(可为路径点名或坐标)
+        charging_speed: float = 3.33,  # 充电速度(30秒充满)
+        battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
+        battery_consumption_per_action: float = 0.5,  # 每次操作消耗0.5%电量
+        fault_system=None, # Injected dependency
         mqtt_client=None,
         kpi_calculator=None
     ):
@@ -59,6 +60,7 @@ class AGV(Vehicle):
         self.battery_level = 40.0
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
+        self.operation_time = operation_time
         self.fault_system = fault_system
         self.kpi_calculator = kpi_calculator
         self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
@@ -217,7 +219,7 @@ class AGV(Vehicle):
         finally:
             self.action = None
 
-    def load_from(self, device:Device, buffer_type=None, action_time_factor=1) :
+    def load_from(self, device:Device, buffer_type=None, product_id: Optional[str] = None):
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         
         注意：product_id 参数已废弃，只能取第一个产品（FIFO）
@@ -239,9 +241,6 @@ class AGV(Vehicle):
         product = None
         feedback = ""
         success = False
-        
-        # calculate timeout time
-        time_out = getattr(device, 'processing_time', 10) / 5 * action_time_factor
         
         try:
             # QualityChecker (先检查子类)
@@ -266,8 +265,21 @@ class AGV(Vehicle):
                 product = yield self.env.process(device.pop(buffer_type))
                 success = True
                 
+            elif isinstance(device, RawMaterial):
+                if len(device.buffer.items) == 0:
+                    feedback = f"{device.id} buffer为空，无法取货"
+                    return False, feedback, None
+
+                # 统一使用 pop() 方法，只能取第一个产品
+                try:
+                    product = yield self.env.process(device.pop(product_id))
+                    success = True
+                except ValueError as e:
+                    # 处理正在加工中的产品不能取的情况
+                    feedback = str(e)
+                    return False, feedback, None
             # Station (父类)
-            elif isinstance(device, Station) or isinstance(device, RawMaterial):
+            elif isinstance(device, Station):
                 if len(device.buffer.items) == 0:
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
@@ -312,7 +324,7 @@ class AGV(Vehicle):
                 product.add_history(self.env.now, f"Loaded onto {self.id} from {device.id}")
                 
                 self.set_status(DeviceStatus.INTERACTING, f"loading from {device.id}{buffer_desc}")
-                yield self.env.timeout(time_out)
+                yield self.env.timeout(self.operation_time)
                 yield self.payload.put(product)
                 self.consume_battery(self.battery_consumption_per_action, "取货操作")
                 feedback = f"已从{device.id}{buffer_desc}取出产品{product.id}并装载到AGV，剩余电量: {self.battery_level:.1f}%"
@@ -326,7 +338,7 @@ class AGV(Vehicle):
 
         return success, feedback, product
 
-    def unload_to(self, device, buffer_type=None, action_time_factor=1):
+    def unload_to(self, device, buffer_type=None):
         """AGV将产品卸载到指定设备/缓冲区，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)"""
         # check if agv can operate
         if not self.can_operate():
@@ -406,7 +418,7 @@ class AGV(Vehicle):
                     if not location_updated:
                         print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 产品位置更新失败，但卸载成功")
                 
-                yield self.env.timeout(time_out)
+                yield self.env.timeout(self.operation_time)
                 self.consume_battery(self.battery_consumption_per_action, "卸载操作")
                 buffer_desc = f" {buffer_type}" if buffer_type else ""
                 feedback = f"已将产品{product.id}卸载到{device.id}{buffer_desc}，剩余电量: {self.battery_level:.1f}%"
