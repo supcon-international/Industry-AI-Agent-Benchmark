@@ -41,6 +41,16 @@ class BaseWarehouse(Device):
     def get_buffer_level(self) -> int:
         """Return the current number of items in the buffer."""
         return len(self.buffer.items)
+    
+    def pop(self):
+        """Remove and return the first product from the warehouse buffer."""
+        product = yield self.buffer.get()
+        
+        # 发布状态更新
+        msg = f"Product {product.id} taken from {self.id} by AGV"
+        print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
+        self.publish_status(msg)
+        return product
 
     def run(self):
         """Warehouses don't process products, just idle loop."""

@@ -139,11 +139,10 @@ class CommandHandler:
 
     def _handle_load_agv(self, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         """Handle AGV load commands.
-        params: {device_id: str, buffer_type: str, product_id: str}
+        params: {device_id: str, buffer_type: str}
         """
         device_id = params.get("device_id")
         buffer_type = params.get("buffer_type")
-        product_id = params.get("product_id")
         if not device_id:
             msg = "load_agv command missing 'device_id' parameter"
             logger.error(msg)
@@ -161,10 +160,10 @@ class CommandHandler:
             logger.error(msg)
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=f"Device {device_id} not found in factory").model_dump_json())
             return
-        logger.info(f"AGV {agv_id} loading {product_id} from {device_id} with buffer_type {buffer_type}")
+        logger.info(f"AGV {agv_id} loading from {device_id} with buffer_type {buffer_type}")
         
         def load_process():
-            success, message, _ = yield from agv.load_from(device, buffer_type, product_id)
+            success, message, _ = yield from agv.load_from(device, buffer_type)
             self.mqtt_client.publish(AGENT_RESPONSES_TOPIC, SystemResponse(timestamp=self.factory.env.now,command_id=command_id, response=message).model_dump_json())
             return success, message
         

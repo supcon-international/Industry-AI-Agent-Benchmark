@@ -269,6 +269,23 @@ class Station(Device):
         self.publish_status()
         return
 
+    def pop(self):
+        """Remove and return the first product from the station's buffer.
+        Ensures that the product being processed cannot be taken.
+        """
+        # 检查第一个产品是否正在被处理
+        if len(self.buffer.items) > 0 and self.current_product_id == self.buffer.items[0].id:
+            raise ValueError(f"Product {self.current_product_id} is currently being processed and cannot be taken")
+        
+        # 取出第一个产品
+        product = yield self.buffer.get()
+        
+        # 发布状态更新
+        msg = f"Product {product.id} taken from {self.id} by AGV"
+        print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
+        self.publish_status(msg)
+        return product
+
     def add_product_to_buffer(self, product: Product):
         """Add a product to the station's buffer"""
         success = False
