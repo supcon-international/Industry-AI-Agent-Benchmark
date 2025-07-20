@@ -65,12 +65,12 @@ production_lines:
 
       - id: "QualityCheck"
         position: [75, 20]
-        buffer_size: 2
+        buffer_size: 1
         processing_times:
           P1: [5, 5]
           P2: [5, 5]
           P3: [5, 5]
-        output_buffer_capacity: 3
+        output_buffer_capacity: 4
         interacting_points: [P7, P8]
         
     agvs:
@@ -165,9 +165,9 @@ production_lines:
         interacting_points: [P5]
       - id: "QualityCheck"
         position: [75, 60] # Changed Y coordinate
-        buffer_size: 2
+        buffer_size: 1
         processing_times: {P1: [5, 5], P2: [5, 5], P3: [5, 5]}
-        output_buffer_capacity: 3
+        output_buffer_capacity: 4
         interacting_points: [P7, P8]
     agvs:
       - id: "AGV_1"
@@ -260,9 +260,9 @@ production_lines:
         interacting_points: [P5]
       - id: "QualityCheck"
         position: [75, 100] # Changed Y coordinate
-        buffer_size: 2
+        buffer_size: 1
         processing_times: {P1: [5, 5], P2: [5, 5], P3: [5, 5]}
-        output_buffer_capacity: 3
+        output_buffer_capacity: 4
         interacting_points: [P7, P8]
     agvs:
       - id: "AGV_1"

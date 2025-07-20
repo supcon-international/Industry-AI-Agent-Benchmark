@@ -40,12 +40,12 @@ stations:
   - id: "QualityCheck"
     # name: "质量检测站"
     position: [75, 20]
-    buffer_size: 4
+    buffer_size: 1
     processing_times:
       P1: [5, 5] #[15, 25]
       P2: [5, 5] #[20, 30]
       P3: [5, 5] #[20, 30]
-    output_buffer_capacity: 3
+    output_buffer_capacity: 4
     interacting_points: [P7, P8]
 
 # AGV配置
