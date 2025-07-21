@@ -38,7 +38,7 @@ production_lines:
     stations:
       - id: "StationA"
         position: [15, 20]
-        buffer_size: 3
+        buffer_size: 2
         processing_times:
           P1: [5, 5]
           P2: [5, 5]
@@ -47,7 +47,7 @@ production_lines:
 
       - id: "StationB"
         position: [35, 20]
-        buffer_size: 3
+        buffer_size: 2
         processing_times:
           P1: [5, 5]
           P2: [5, 5]
@@ -56,7 +56,7 @@ production_lines:
 
       - id: "StationC"
         position: [55, 20]
-        buffer_size: 3
+        buffer_size: 2
         processing_times:
           P1: [5, 5]
           P2: [5, 5]
@@ -65,7 +65,7 @@ production_lines:
 
       - id: "QualityCheck"
         position: [75, 20]
-        buffer_size: 1
+        buffer_size: 2
         processing_times:
           P1: [5, 5]
           P2: [5, 5]

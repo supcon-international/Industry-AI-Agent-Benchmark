@@ -141,3 +141,7 @@ class Warehouse(BaseWarehouse):
         product.add_history(self.env.now, f"Stored in warehouse {self.id}")
         print(f"[{self.env.now:.2f}] 📦 {self.id}: Store finished product {product.id} (type: {product.product_type})")
         return True
+    
+    def is_full(self) -> bool:
+        # return self.get_buffer_level() >= self.buffer_size
+        return False

@@ -99,6 +99,7 @@ class QualityChecker(Station):
         Quality check process following Station's timeout-get-put pattern.
         """
         try:
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: process_product called for {product.id}, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             # Check if the device can operate
             if not self.can_operate():
                 msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not process product, device is not available"
@@ -107,6 +108,7 @@ class QualityChecker(Station):
                 return
 
             self.set_status(DeviceStatus.PROCESSING)
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: set_status(PROCESSING), buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             self.publish_status()
 
             # Record processing start and get processing time
@@ -123,7 +125,9 @@ class QualityChecker(Station):
             
             # The actual processing work (timeout-get pattern like Station)
             yield self.env.timeout(actual_processing_time)
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: timeout finished for {product.id}, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             product = yield self.buffer.get()
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: got product {product.id} from buffer, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             product.process_at_station(self.id, self.env.now)
             
             # Update statistics upon successful completion
@@ -135,6 +139,7 @@ class QualityChecker(Station):
             
             # Perform quality inspection
             decision = self._make_simple_decision(product)
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: decision for {product.id} is {decision}, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             
             # Processing finished successfully
             msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished inspecting, actual processing time: {actual_processing_time:.1f}s"
@@ -146,6 +151,7 @@ class QualityChecker(Station):
 
         except simpy.Interrupt as e:
             print(f"[{self.env.now:.2f}] ⚠️ {self.id}: Inspection of product {product.id} was interrupted: {e.cause}")
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: INTERRUPT, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             if product not in self.buffer.items:
                 # 产品已取出，说明检测时间已经完成，应该继续流转
                 print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已检测完成，继续流转")
@@ -155,11 +161,13 @@ class QualityChecker(Station):
                 # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
                 print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 检测被中断，留在buffer中")
         finally:
+            print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: process_product finally for {product.id}, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
             # Clear the action handle once the process is complete or interrupted
             self.action = None
 
     def _execute_quality_decision(self, product: Product, decision: SimpleDecision):
         """Execute quality decision (equivalent to _transfer_product_to_next_stage)"""
+        print(f"[{self.env.now:.2f}] [DEBUG] {self.id}: _execute_quality_decision for {product.id}, decision={decision}, buffer={len(self.buffer.items)}, output_buffer={len(self.output_buffer.items)}")
         
         if decision == SimpleDecision.PASS:
             self.stats["passed_count"] += 1

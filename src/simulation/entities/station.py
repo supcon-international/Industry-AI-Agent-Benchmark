@@ -160,6 +160,7 @@ class Station(Device):
         from waiting for it to processing and transferring it.
         Includes robust error handling for interruptions.
         """
+        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: process_product started for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
         try:
             # Check if the device can operate
             if not self.can_operate():
@@ -253,6 +254,7 @@ class Station(Device):
                 self.current_product_start_time = None
                 self.current_product_total_time = None
                 self.current_product_elapsed_time = None
+        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: process_product finished for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
@@ -266,8 +268,9 @@ class Station(Device):
             self.publish_status("downstream conveyor is full or run into some issue, station is blocked")
 
         # TODO: while len(self.downstream_conveyor.buffer.items) >0 //取决于下游堵塞但是没东西时要不要放1个（之前有空位就会放）
-        while not self.downstream_conveyor.can_operate():
-                    yield self.env.timeout(0.1)
+        while not self.downstream_conveyor.can_operate() or self.downstream_conveyor.is_full():
+            yield self.env.timeout(0.1)
+
         yield self.downstream_conveyor.push(product)
         
         # Set status back to IDLE after the push operation is complete
@@ -285,6 +288,7 @@ class Station(Device):
         
         # 取出第一个产品
         product = yield self.buffer.get()
+        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: pop {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
         
         # 发布状态更新
         msg = f"Product {product.id} taken from {self.id} by AGV"

@@ -70,6 +70,7 @@ class Conveyor(BaseConveyor):
     def push(self, product):
         """Put a product on the conveyor (may block if full)."""
         result = self.buffer.put(product)
+        print(f"[{self.env.now:.2f}] [DEBUG] Conveyor {self.id}: push {product.id}, buffer={len(self.buffer.items)}/{self.capacity}")
         # 产品添加后发布状态
         self.publish_status()
         return result
@@ -77,6 +78,7 @@ class Conveyor(BaseConveyor):
     def pop(self):
         """Remove and return a product from the conveyor (may block if empty)."""
         product = yield self.buffer.get()
+        print(f"[{self.env.now:.2f}] [DEBUG] Conveyor {self.id}: pop {product.id}, buffer={len(self.buffer.items)}/{self.capacity}")
         
         # 如果该产品有对应的处理进程，中断并删除它
         if product.id in self.active_processes:
@@ -119,7 +121,6 @@ class Conveyor(BaseConveyor):
 
     def run(self):
         """Main operational loop for the conveyor. This should NOT be interrupted by faults."""
-        
         while True:
             # 等待设备可操作且buffer有产品
             yield self.env.process(self._wait_for_ready_state())
@@ -135,9 +136,18 @@ class Conveyor(BaseConveyor):
             # 检查buffer中的每个产品，如果还没有处理进程就启动一个
             for item in list(self.buffer.items):  # 使用list避免迭代时修改
                 if item.id not in self.active_processes:
-                    # 为这个产品启动一个处理进程
-                    process = self.env.process(self.process_single_item(item))
-                    self.active_processes[item.id] = process
+                    # 只有在非阻塞状态下才为新产品启动处理进程
+                    if self.status != DeviceStatus.BLOCKED:
+                        # 为这个产品启动一个处理进程
+                        process = self.env.process(self.process_single_item(item))
+                        self.active_processes[item.id] = process
+                    else:
+                        # 如果是阻塞状态，检查这个产品是否是第一个（领头产品）
+                        if len(self.buffer.items) > 0 and self.buffer.items[0].id == item.id:
+                            # 这是领头产品，允许启动进程
+                            process = self.env.process(self.process_single_item(item))
+                            self.active_processes[item.id] = process
+                            print(f"[{self.env.now:.2f}] 👑 Conveyor {self.id}: Starting process for leader product {item.id} despite blocked status")
             
             # 清理已完成的进程
             completed_ids = []
@@ -147,23 +157,18 @@ class Conveyor(BaseConveyor):
             for product_id in completed_ids:
                 del self.active_processes[product_id]
             
-            yield self.env.timeout(0.1)  # 短暂等待后再检查
-    
+            yield self.env.timeout(0.1)
+
     def _wait_for_ready_state(self):
         """等待设备处于可操作状态且buffer有产品"""
         while True:
-            # 如果设备不可操作，等待
-            if not self.can_operate():
-                yield self.env.timeout(1)
-                continue
-
             # 如果没有下游站点，等待
             if self.downstream_station is None:
                 yield self.env.timeout(1)
                 continue
             
             # 如果buffer为空，等待
-            if len(self.buffer.items) == 0:
+            if len(self.buffer.items) == 0 or not self.can_operate():
                 yield self.env.timeout(0.1)
                 continue
 
@@ -175,8 +180,15 @@ class Conveyor(BaseConveyor):
         actual_product = None
         try:
             # 检查下游站点是否存在
-            if self.downstream_station is None or not self.downstream_station.can_operate():
+            if self.downstream_station is None:
                 return
+            
+            # 如果当前是blocked状态且不是领头产品，不应该继续
+            if self.status == DeviceStatus.BLOCKED:
+                is_leader = len(self.buffer.items) > 0 and self.buffer.items[0].id == product.id
+                if not is_leader:
+                    print(f"[{self.env.now:.2f}] 🚫 Conveyor {self.id}: Product {product.id} blocked at start, not leader")
+                    return
             
             self.set_status(DeviceStatus.WORKING)
             self.publish_status()
@@ -359,6 +371,7 @@ class Conveyor(BaseConveyor):
     def _block_all_products(self, reason="Downstream blocked"):
         """阻塞所有产品处理（除了正在等待的领头产品）"""
         if self.status == DeviceStatus.BLOCKED:
+            print(f"[{self.env.now:.2f}] [DEBUG] Conveyor {self.id}: already blocked, skip")
             return  # 已经处于阻塞状态
         
         # 设置阻塞状态
@@ -377,6 +390,7 @@ class Conveyor(BaseConveyor):
     def _unblock_all_products(self):
         """解除阻塞，允许产品继续处理"""
         if self.status != DeviceStatus.BLOCKED:
+            print(f"[{self.env.now:.2f}] [DEBUG] Conveyor {self.id}: not blocked, skip unblock")
             return  # 不在阻塞状态
         
         self.set_status(DeviceStatus.WORKING)
@@ -458,6 +472,7 @@ class TripleBufferConveyor(BaseConveyor):
     def push(self, product, buffer_type="main"):
         """Put product into specified buffer. buffer_type: 'main', 'upper', 'lower'."""
         result = self.get_buffer(buffer_type).put(product)
+        print(f"[{self.env.now:.2f}] [DEBUG] TripleBufferConveyor {self.id}: push {product.id} to {buffer_type} buffer, buffer={len(self.get_buffer(buffer_type).items)}/{self.get_buffer(buffer_type).capacity}")
         # 产品添加后发布状态
         self.publish_status()
         return result
@@ -475,6 +490,7 @@ class TripleBufferConveyor(BaseConveyor):
     def pop(self, buffer_type="main"):
         """Get product from specified buffer."""
         product = yield self.get_buffer(buffer_type).get()
+        print(f"[{self.env.now:.2f}] [DEBUG] TripleBufferConveyor {self.id}: pop {product.id} from {buffer_type} buffer, buffer={len(self.get_buffer(buffer_type).items)}/{self.get_buffer(buffer_type).capacity}")
         
         # 如果是从main_buffer取出且该产品有对应的处理进程，中断并删除它
         if buffer_type == "main" and product.id in self.active_processes:
@@ -524,7 +540,7 @@ class TripleBufferConveyor(BaseConveyor):
             # 检查是否应该解除阻塞状态
             if self.status == DeviceStatus.BLOCKED:
                 # 如果下游工站恢复正常或者没有正在等待的领头进程，解除阻塞
-                if self.downstream_station and self.downstream_station.can_operate():
+                if self.downstream_station and self.downstream_station.can_operate() and not self.downstream_station.is_full():
                     if self.blocked_leader_process is None or not self.blocked_leader_process.is_alive:
                         print(f"[{self.env.now:.2f}] 🔓 TripleBufferConveyor {self.id}: Downstream recovered or no leader waiting, unblocking")
                         self._unblock_all_products()
@@ -532,9 +548,18 @@ class TripleBufferConveyor(BaseConveyor):
             # 检查main_buffer中的每个产品，如果还没有处理进程就启动一个
             for item in list(self.main_buffer.items):  # 使用list避免迭代时修改
                 if item.id not in self.active_processes:
-                    # 为这个产品启动一个处理进程
-                    process = self.env.process(self.process_single_item(item))
-                    self.active_processes[item.id] = process
+                    # 只有在非阻塞状态下才为新产品启动处理进程
+                    if self.status != DeviceStatus.BLOCKED:
+                        # 为这个产品启动一个处理进程
+                        process = self.env.process(self.process_single_item(item))
+                        self.active_processes[item.id] = process
+                    else:
+                        # 如果是阻塞状态，检查这个产品是否是第一个（领头产品）
+                        if len(self.main_buffer.items) > 0 and self.main_buffer.items[0].id == item.id:
+                            # 这是领头产品，允许启动进程
+                            process = self.env.process(self.process_single_item(item))
+                            self.active_processes[item.id] = process
+                            print(f"[{self.env.now:.2f}] 👑 TripleBufferConveyor {self.id}: Starting process for leader product {item.id} despite blocked status")
             
             # 清理已完成的进程
             completed_ids = []
@@ -549,22 +574,15 @@ class TripleBufferConveyor(BaseConveyor):
     def _wait_for_ready_state(self):
         """等待设备处于可操作状态且buffer有产品"""
         while True:
-            # 如果设备不可操作，等待
-            if not self.can_operate():
-                yield self.env.timeout(1)
-                continue
             
             # 如果没有下游站点，等待
             if self.downstream_station is None:
                 yield self.env.timeout(1)
                 continue
-            
             # 如果main_buffer为空，等待
-            if len(self.main_buffer.items) == 0:
+            if len(self.main_buffer.items) == 0 or not self.can_operate():
                 yield self.env.timeout(0.1)
                 continue
-            
-            # 设备可操作且有产品，返回
             return
     
     def process_single_item(self, product):
@@ -572,8 +590,15 @@ class TripleBufferConveyor(BaseConveyor):
         actual_product = None
         try:
             # 检查下游站点是否存在
-            if self.downstream_station is None or not self.downstream_station.can_operate():
+            if self.downstream_station is None:
                 return
+            
+            # 如果当前是blocked状态且不是领头产品，不应该继续
+            if self.status == DeviceStatus.BLOCKED:
+                is_leader = len(self.main_buffer.items) > 0 and self.main_buffer.items[0].id == product.id
+                if not is_leader:
+                    print(f"[{self.env.now:.2f}] 🚫 TripleBufferConveyor {self.id}: Product {product.id} blocked at start, not leader")
+                    return
             
             self.set_status(DeviceStatus.WORKING)
             self.publish_status()
@@ -639,16 +664,21 @@ class TripleBufferConveyor(BaseConveyor):
                 self.blocked_leader_process = self.env.active_process
                 print(f"[{self.env.now:.2f}] 🎯 Conveyor {self.id}: {actual_product.id} is the leader product (first in order)")
                 
-                downstream_full = self.downstream_station.is_full()
-                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {len(self.downstream_station.buffer.items)}/{self.downstream_station.buffer.capacity}, full={downstream_full}, can opeatate:{self.downstream_station.can_operate()}")
+                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: {buffer_name} buffer {len(chosen_buffer.items)}/{chosen_buffer.capacity}, can opeatate:{self.downstream_station.can_operate()}")
+                
+                if buffer_name == "upper_buffer" or buffer_name == "lower_buffer":
+                    if len(chosen_buffer.items) >= chosen_buffer.capacity and self.status != DeviceStatus.BLOCKED:
+                        # 下游已满或下游工站不可操作，阻塞其他产品
+                        self._block_all_products()
+                    while len(chosen_buffer.items) >= chosen_buffer.capacity:
+                        yield self.env.timeout(0.1)
+                else:
+                    if (len(chosen_buffer.items) >= chosen_buffer.capacity or not self.downstream_station.can_operate()) and self.status != DeviceStatus.BLOCKED:
+                        # 下游已满，阻塞其他产品
+                        self._block_all_products()
+                    while len(chosen_buffer.items) >= chosen_buffer.capacity or not self.downstream_station.can_operate():
+                        yield self.env.timeout(1)
                     
-                if (downstream_full or not self.downstream_station.can_operate()) and self.status != DeviceStatus.BLOCKED:
-                    # 下游已满或下游工站不可操作，阻塞其他产品
-                    self._block_all_products()
-                    
-                print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: Leader {actual_product.id} waiting to put to downstream...")
-                while not self.downstream_station.can_operate():
-                    yield self.env.timeout(0.1)
                 yield chosen_buffer.put(actual_product)
 
                 # 成功放入，如果之前是阻塞状态，现在解除
@@ -685,7 +715,7 @@ class TripleBufferConveyor(BaseConveyor):
                 # 时间记录已经在pop()中清理了，这里不需要再清理
                 return
             
-            print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted")
+            print(f"[{self.env.now:.2f}] ⚠️ TripleBufferConveyor {self.id}: Processing of product {product.id} was interrupted:{interrupt_reason}")
             
             # 记录中断时已经传输的时间（阻塞和故障都需要）
             if product.id in self.product_start_times:
@@ -758,6 +788,7 @@ class TripleBufferConveyor(BaseConveyor):
     def _block_all_products(self, reason="Downstream or side buffer blocked"):
         """阻塞所有产品处理（除了正在等待的领头产品）"""
         if self.status == DeviceStatus.BLOCKED:
+            print(f"[{self.env.now:.2f}] [DEBUG] TripleBufferConveyor {self.id}: already blocked, skip")
             return  # 已经处于阻塞状态
         
         # 设置阻塞状态
@@ -770,10 +801,13 @@ class TripleBufferConveyor(BaseConveyor):
             if process != self.blocked_leader_process and process.is_alive:
                 process.interrupt(reason)
                 blocked_count += 1
+        
+        print(f"[{self.env.now:.2f}] 🚧 Conveyor {self.id}: Blocked {blocked_count} products due to downstream blockage")
 
     def _unblock_all_products(self):
         """解除阻塞，允许产品继续处理"""
         if self.status != DeviceStatus.BLOCKED:
+            print(f"[{self.env.now:.2f}] [DEBUG] TripleBufferConveyor {self.id}: not blocked, skip unblock")
             return  # 不在阻塞状态
         
         self.set_status(DeviceStatus.WORKING)
