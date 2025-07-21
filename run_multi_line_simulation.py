@@ -36,12 +36,12 @@ class MultiLineFactorySimulation:
         self.command_handler: Optional[MultiLineCommandHandler] = None
         self.running = False
 
-    def initialize(self):
+    def initialize(self, no_faults=False):
         """Initialize all simulation components."""
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
         
         # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP1")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP2")
         
         # Connect to MQTT
         self.mqtt_client.connect()
@@ -67,7 +67,7 @@ class MultiLineFactorySimulation:
             print(f"❌ Failed to load multi-line factory configuration: {e}")
             raise e
         
-        self.factory = Factory(layout_config, self.mqtt_client, no_faults=False) # no_faults for cleaner testing
+        self.factory = Factory(layout_config, self.mqtt_client, no_faults=no_faults) # no_faults for cleaner testing
         
         # Create the factory with MQTT client
         # self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
@@ -138,12 +138,17 @@ def run_simulation_multi():
         action="store_true",
         help="Enable the interactive menu for manual control."
     )
+    parser.add_argument(
+        "--no-fault",
+        action="store_true",
+        help="Disable random fault injection in the simulation."
+    )
     args = parser.parse_args()
 
     simulation = MultiLineFactorySimulation()
-    simulation.initialize()
+    simulation.initialize(no_faults=args.no_fault)
     
-    if args.menu:
+    if args.menu and simulation.factory and simulation.factory.topic_manager:
         threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()
         logger.info("Interactive menu enabled. Type commands in the console.")
 

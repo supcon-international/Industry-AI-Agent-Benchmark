@@ -1,5 +1,5 @@
 import json
-from src.simulation.factory import Factory
+from src.simulation.factory_multi import Factory
 from src.utils.mqtt_client import MQTTClient
 from config.topics import AGENT_COMMANDS_TOPIC, RESULT_TOPIC
 from src.game_logic.fault_system import FaultType
@@ -80,10 +80,11 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
             cmd = {"action": "charge", "target": agv_id, "params": {"target_level": target_level}}
 
         elif op == "5":
-            if factory.fault_system is None:
+            line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
+
+            if factory.lines[line_id].fault_system is None:
                 print("故障系统未初始化，请先初始化故障系统。")
                 continue
-            line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
             
             # 1:StationB, 2:Conveyor_BC, 3:StationC
             fast_fault = input("请输入故障类型 (1:StationA for 50s, 2:Conveyor_AB for 50s, 3.StationB for 50s,4, Conveyor_BC for 50s, 5:StationC for 50s) else manual: ").strip()
@@ -131,7 +132,7 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                     print(f"输入无效: {e}！")
                     continue
             
-            factory.fault_system._inject_fault_now(device_id, fault_type, fault_duration)
+            factory.lines[line_id].fault_system._inject_fault_now(device_id, fault_type, fault_duration)
             print(f"已注入故障: {device_id} {fault_type.name} {fault_duration}s")
             continue
 
