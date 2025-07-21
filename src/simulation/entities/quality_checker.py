@@ -178,7 +178,7 @@ class QualityChecker(Station):
                 print(msg)
                 self.publish_status(msg)
                 self.report_buffer_full("output_buffer")
-            
+            # TODO: Quality Checker do not have downstream device, dont care about whether downstream can_operate, just cares about buffer full
             # Put product into output buffer (may block if full)
             yield self.output_buffer.put(product)
             msg = f"[{self.env.now:.2f}] 📦 {self.id}: 产品 {product.id} 放入output buffer，等待AGV/人工搬运"

@@ -53,7 +53,7 @@ class Factory:
         self.fault_system: Optional[FaultSystem] = None
         
         # Initialize KPI calculator early so it can be passed to devices
-        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.layout)
+        self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, None, self.layout)
         
         # Create devices first
         self._create_devices()

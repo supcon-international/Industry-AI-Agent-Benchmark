@@ -477,7 +477,7 @@ class KPICalculator:
                     from config.topics import KPI_UPDATE_TOPIC
                     topic = KPI_UPDATE_TOPIC
                 self.mqtt_client.publish(topic, kpi_update.model_dump_json())
-                print(f"[{self.env.now:.2f}] 📊 KPI Update published")
+                # print(f"[{self.env.now:.2f}] 📊 KPI Update published")
         except Exception as e:
             print(f"[{self.env.now:.2f}] ❌ Failed to publish KPI update: {e}")
     

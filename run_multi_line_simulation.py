@@ -36,29 +36,30 @@ class MultiLineFactorySimulation:
         self.command_handler: Optional[MultiLineCommandHandler] = None
         self.running = False
 
-    def initialize(self, no_faults=False):
+    def initialize(self, no_faults=False, no_mqtt=False):
         """Initialize all simulation components."""
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
         
         # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP2")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP_test")
         
         # Connect to MQTT
-        self.mqtt_client.connect()
         logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
 
-        # Wait for MQTT client to be fully connected
-        max_retries = 20
-        retry_interval = 0.5
-        for i in range(max_retries):
-            if self.mqtt_client.is_connected():
-                logger.info("✅ MQTT client is fully connected.")
-                break
-            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
-            time.sleep(retry_interval)
-        else:
-            logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
-            raise ConnectionError("MQTT connection failed.")
+        if not no_mqtt:
+            self.mqtt_client.connect()
+            # Wait for MQTT client to be fully connected
+            max_retries = 20
+            retry_interval = 0.5
+            for i in range(max_retries):
+                if self.mqtt_client.is_connected():
+                    logger.info("✅ MQTT client is fully connected.")
+                    break
+                logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+                time.sleep(retry_interval)
+            else:
+                logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
+                raise ConnectionError("MQTT connection failed.")
 
         try:
             layout_config = load_factory_config('factory_layout_multi.yml')
@@ -139,6 +140,11 @@ def run_simulation_multi():
         help="Enable the interactive menu for manual control."
     )
     parser.add_argument(
+        "--no-mqtt",
+        action="store_true",
+        help="Ignore mqtt connection for offline test"
+    )
+    parser.add_argument(
         "--no-fault",
         action="store_true",
         help="Disable random fault injection in the simulation."
@@ -146,7 +152,7 @@ def run_simulation_multi():
     args = parser.parse_args()
 
     simulation = MultiLineFactorySimulation()
-    simulation.initialize(no_faults=args.no_fault)
+    simulation.initialize(no_faults=args.no_fault, no_mqtt=args.no_mqtt)
     
     if args.menu and simulation.factory and simulation.factory.topic_manager:
         threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()

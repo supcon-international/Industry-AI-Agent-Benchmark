@@ -229,12 +229,14 @@ class Conveyor(BaseConveyor):
                 print(f"[{self.env.now:.2f}] 🎯 Conveyor {self.id}: {actual_product.id} is the leader product (first in order)")
                 
                 downstream_full = self.downstream_station.is_full()
-                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {self.downstream_station.buffer.items}/{self.downstream_station.buffer.capacity}, full={downstream_full}")
+                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {len(self.downstream_station.buffer.items)}/{self.downstream_station.buffer.capacity}, full={downstream_full}, can opeatate:{self.downstream_station.can_operate()}")
                     
                 if (downstream_full or not self.downstream_station.can_operate()) and self.status != DeviceStatus.BLOCKED:
                     # 下游已满或下游工站不可操作，阻塞其他产品
                     self._block_all_products()
                     
+                while not self.downstream_station.can_operate():
+                    yield self.env.timeout(0.1)
                 # 尝试放入下游（可能会阻塞）
                 print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: Leader {actual_product.id} trying to put to downstream...")
                 yield self.downstream_station.buffer.put(actual_product)
@@ -638,14 +640,15 @@ class TripleBufferConveyor(BaseConveyor):
                 print(f"[{self.env.now:.2f}] 🎯 Conveyor {self.id}: {actual_product.id} is the leader product (first in order)")
                 
                 downstream_full = self.downstream_station.is_full()
-                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {self.downstream_station.buffer.items}/{self.downstream_station.buffer.capacity}, full={downstream_full}")
+                print(f"[{self.env.now:.2f}] 🔍 Conveyor {self.id}: Downstream buffer {len(self.downstream_station.buffer.items)}/{self.downstream_station.buffer.capacity}, full={downstream_full}, can opeatate:{self.downstream_station.can_operate()}")
                     
                 if (downstream_full or not self.downstream_station.can_operate()) and self.status != DeviceStatus.BLOCKED:
                     # 下游已满或下游工站不可操作，阻塞其他产品
                     self._block_all_products()
                     
-                # 尝试放入下游（可能会阻塞）
-                print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: Leader {actual_product.id} trying to put to downstream...")
+                print(f"[{self.env.now:.2f}] ⏳ Conveyor {self.id}: Leader {actual_product.id} waiting to put to downstream...")
+                while not self.downstream_station.can_operate():
+                    yield self.env.timeout(0.1)
                 yield chosen_buffer.put(actual_product)
 
                 # 成功放入，如果之前是阻塞状态，现在解除

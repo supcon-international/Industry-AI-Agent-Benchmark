@@ -141,16 +141,16 @@ class Station(Device):
     def _wait_for_ready_state(self):
         """等待设备处于可操作状态且buffer有产品"""
         while True:
-            # 如果设备不可操作，等待
-            if not self.can_operate():
-                yield self.env.timeout(1)
-                continue
-            
             # 如果buffer为空，等待
             if len(self.buffer.items) == 0:
                 yield self.env.timeout(0.1)
                 continue
-            
+
+            # 如果设备不可操作，等待
+            if not self.can_operate():
+                yield self.env.timeout(1)
+                continue
+
             # 设备可操作且有产品，返回
             return
 
@@ -261,11 +261,13 @@ class Station(Device):
             # No downstream, end of process
             return
         
-        if self.downstream_conveyor.is_full():
+        if self.downstream_conveyor.is_full() or not self.downstream_conveyor.can_operate():
             self.set_status(DeviceStatus.BLOCKED)
-            self.publish_status("downstream conveyor is full, station is blocked")
+            self.publish_status("downstream conveyor is full or run into some issue, station is blocked")
 
-        # normal conveyor - SimPy push()会自动阻塞直到有空间
+        # TODO: while len(self.downstream_conveyor.buffer.items) >0 //取决于下游堵塞但是没东西时要不要放1个（之前有空位就会放）
+        while not self.downstream_conveyor.can_operate():
+                    yield self.env.timeout(0.1)
         yield self.downstream_conveyor.push(product)
         
         # Set status back to IDLE after the push operation is complete
