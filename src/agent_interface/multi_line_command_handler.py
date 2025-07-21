@@ -127,6 +127,7 @@ class MultiLineCommandHandler:
     def _handle_load_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
         device_id = params.get("device_id")
         buffer_type = params.get("buffer_type")
+        product_id = params.get("product_id", None)
 
         if not device_id:
             self._publish_response(line.name, command_id, "'device_id' missing in load command.")
@@ -143,7 +144,7 @@ class MultiLineCommandHandler:
             return
 
         def load_process():
-            success, message, _ = yield from agv.load_from(device, buffer_type)
+            success, message, _ = yield from agv.load_from(device, buffer_type, product_id)
             self._publish_response(line.name, command_id, message)
         
         self.factory.env.process(load_process())

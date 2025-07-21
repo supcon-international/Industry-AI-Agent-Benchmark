@@ -219,16 +219,16 @@ class AGV(Vehicle):
         
         finally:
             self.action = None
-
+    
     def load_from(self, device:Device, buffer_type=None, product_id: Optional[str] = None):
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         
         注意：product_id 参数已废弃，只能取第一个产品（FIFO）
         """
-        if not self.can_operate():
-                msg = f"Can not load. AGV {self.id} is not available."
-                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
-                return False, msg, None
+        if not self.can_operate() or self.is_payload_full():
+            msg = f"Can not load. AGV {self.id} is not available or payload is full."
+            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            return False, msg, None
         
         if self.current_point not in device.interacting_points:
             msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot load. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
@@ -270,9 +270,8 @@ class AGV(Vehicle):
                 if len(device.buffer.items) == 0:
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
-
-                # 统一使用 pop() 方法，只能取第一个产品
                 try:
+                    print(f"TEST: agv load from raw material with product_id {product_id}")
                     product = yield self.env.process(device.pop(product_id))
                     success = True
                 except ValueError as e:
@@ -346,6 +345,11 @@ class AGV(Vehicle):
                 msg = f"Can not unload. AGV {self.id} is not available."
                 logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
                 return False, msg, None
+        
+        if device.is_full():
+            msg = f"Can not unload. {device.id} is full."
+            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            return False, msg, None
         
         if self.current_point not in device.interacting_points:
             msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot unload. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
