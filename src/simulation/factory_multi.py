@@ -25,6 +25,7 @@ class Factory:
         self.topic_manager = TopicManager(player_name)
 
         self.lines: Dict[str, Line] = {}
+        self.raw_material: RawMaterial
         self.warehouse: Warehouse
         self.order_generator: OrderGenerator
         self.kpi_calculator = KPICalculator(self.env, self.mqtt_client, self.topic_manager)
@@ -51,24 +52,33 @@ class Factory:
                 kpi_calculator=self.kpi_calculator
             )
             self.lines[line_name] = line
-            self.all_devices.update(line.all_devices)
             print(f"[{self.env.now:.2f}] 🏭 Created Production Line: {line_name}")
 
     def _create_warehouse_order_generator(self):
         """Creates the warehouse for the factory."""
         for warehouse_cfg in self.layout.get('warehouses', []):
-            common_args = {"env": self.env, "mqtt_client": self.mqtt_client, **warehouse_cfg}
+            common_args = {"env": self.env, "mqtt_client": self.mqtt_client, "topic_manager": self.topic_manager, **warehouse_cfg}
             if warehouse_cfg['id'] == 'RawMaterial':
                 self.raw_material = RawMaterial(**common_args)
             elif warehouse_cfg['id'] == 'Warehouse':
                 self.warehouse = Warehouse(**common_args)
 
-        self.order_generator = OrderGenerator(
-            env=self.env,
-            raw_material=self.raw_material,
-            mqtt_client=self.mqtt_client,
-            topic_manager=self.topic_manager
-        )
+            if self.raw_material:
+                og_config = self.layout.get('order_generator', {})
+                self.order_generator = OrderGenerator(
+                    env=self.env,
+                    raw_material=self.raw_material,
+                    mqtt_client=self.mqtt_client,
+                    topic_manager=self.topic_manager,
+                    kpi_calculator=self.kpi_calculator,
+                    **og_config
+                )
+
+        # Add global devices to all_devices
+        if hasattr(self, 'warehouse') and self.warehouse is not None:
+            self.all_devices[self.warehouse.id] = self.warehouse
+        if hasattr(self, 'raw_material') and self.raw_material is not None:
+            self.all_devices[self.raw_material.id] = self.raw_material
 
     def get_device_status(self, device_id: str) -> Dict:
         """Get comprehensive device status including faults."""

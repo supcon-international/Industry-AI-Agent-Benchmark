@@ -41,7 +41,7 @@ class MultiLineFactorySimulation:
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
         
         # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP1")
         
         # Connect to MQTT
         self.mqtt_client.connect()
@@ -132,20 +132,20 @@ class MultiLineFactorySimulation:
 
 def run_simulation_multi():
     """Runs the multi-line factory simulation."""
-    # parser = argparse.ArgumentParser(description="SUPCON Multi-Line Factory Simulation Launcher")
-    # parser.add_argument(
-    #     "--menu",
-    #     action="store_true",
-    #     help="Enable the interactive menu for manual control."
-    # )
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="SUPCON Multi-Line Factory Simulation Launcher")
+    parser.add_argument(
+        "--menu",
+        action="store_true",
+        help="Enable the interactive menu for manual control."
+    )
+    args = parser.parse_args()
 
     simulation = MultiLineFactorySimulation()
     simulation.initialize()
     
-    # if args.menu:
-    #     threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()
-    #     logger.info("Interactive menu enabled. Type commands in the console.")
+    if args.menu:
+        threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()
+        logger.info("Interactive menu enabled. Type commands in the console.")
 
     simulation.run()  # Run indefinitely
 

@@ -137,9 +137,9 @@ class MultiLineCommandHandler:
             self._publish_response(line.name, command_id, f"AGV '{agv_id}' not found in line '{line.name}'.")
             return
 
-        device = line.all_devices.get(device_id)
+        device = self._find_device(line, device_id)
         if not device:
-            self._publish_response(line.name, command_id, f"Device '{device_id}' not found in line '{line.name}'.")
+            self._publish_response(line.name, command_id, f"Device '{device_id}' not found in line '{line.name}' or factory.")
             return
 
         def load_process():
@@ -161,9 +161,9 @@ class MultiLineCommandHandler:
             self._publish_response(line.name, command_id, f"AGV '{agv_id}' not found in line '{line.name}'.")
             return
 
-        device = line.all_devices.get(device_id)
+        device = self._find_device(line, device_id)
         if not device:
-            self._publish_response(line.name, command_id, f"Device '{device_id}' not found in line '{line.name}'.")
+            self._publish_response(line.name, command_id, f"Device '{device_id}' not found in line '{line.name}' or factory.")
             return
 
         def unload_process():
@@ -188,6 +188,20 @@ class MultiLineCommandHandler:
             self._publish_response(line.name, command_id, message)
         
         self.factory.env.process(charge_process())
+
+    def _find_device(self, line, device_id: str):
+        """
+        Find a device first in the line, then in factory global devices.
+        Returns the device if found, None otherwise.
+        """
+        # First try to find in the current line
+        device = line.all_devices.get(device_id)
+        if device:
+            return device
+        
+        # If not found in line, search in factory global devices (warehouse, raw_material)
+        device = self.factory.all_devices.get(device_id)
+        return device
 
     def _publish_response(self, line_id: Optional[str], command_id: Optional[str], response_message: str):
         """Publishes a response to the appropriate MQTT topic."""

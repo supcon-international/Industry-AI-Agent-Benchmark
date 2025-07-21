@@ -41,7 +41,7 @@ class BaseWarehouse(Device):
             buffer=[p.id for p in self.buffer.items],
             stats=self.stats
         )
-        if self.topic_manager and self.line_id:
+        if self.topic_manager:
             topic = self.topic_manager.get_warehouse_status_topic(self.id)
         else:
             topic = get_warehouse_status_topic(self.id)
