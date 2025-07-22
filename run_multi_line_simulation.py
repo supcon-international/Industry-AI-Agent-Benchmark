@@ -41,7 +41,7 @@ class MultiLineFactorySimulation:
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
         
         # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_LZP_test")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_ZXY_test")
         
         # Connect to MQTT
         logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")

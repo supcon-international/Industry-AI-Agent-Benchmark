@@ -95,8 +95,8 @@ class Station(Device):
             
             # Update KPI calculator with device utilization
             if self.kpi_calculator:
-                self.kpi_calculator.add_energy_cost(self.id, processing_duration)
-                self.kpi_calculator.update_device_utilization(self.id, self.env.now - self.stats["start_time"])
+                self.kpi_calculator.add_energy_cost(self.id, self.line_id, processing_duration)
+                self.kpi_calculator.update_device_utilization(self.id, self.line_id, self.env.now - self.stats["start_time"])
         
         self.last_status_change_time = self.env.now
         super().set_status(new_status, message)
@@ -198,6 +198,10 @@ class Station(Device):
                 msg = f"[{self.env.now:.2f}] {self.id}: {product.id} start processing, need {processing_time:.1f}s"
                 print(msg)
                 self.publish_status(msg)
+                
+                # Mark production start for KPI tracking (only for StationA)
+                if self.id == "StationA" and self.kpi_calculator:
+                    self.kpi_calculator.mark_production_start(product)
             
             # The actual processing work
             yield self.env.timeout(remaining_time)

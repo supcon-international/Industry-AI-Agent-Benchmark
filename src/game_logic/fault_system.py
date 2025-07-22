@@ -228,7 +228,7 @@ class FaultSystem:
                 
                 # Track AGV fault time specifically
                 if fault.fault_type == FaultType.AGV_FAULT:
-                    self.kpi_calculator.update_agv_fault_time(device_id, recovery_time)
+                    self.kpi_calculator.update_agv_fault_time(device_id, self.line_id, recovery_time)
             
             # Send recovery alert
             self._send_recovery_alert(device_id, fault_symptom)

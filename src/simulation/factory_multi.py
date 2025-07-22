@@ -33,6 +33,9 @@ class Factory:
         self.all_devices = {}
         self._create_warehouse_order_generator()
         self._create_production_lines()
+        
+        # Start process to update active faults count
+        self.env.process(self._update_active_faults_count())
 
 
     def _create_production_lines(self):
@@ -59,7 +62,7 @@ class Factory:
         for warehouse_cfg in self.layout.get('warehouses', []):
             common_args = {"env": self.env, "mqtt_client": self.mqtt_client, "topic_manager": self.topic_manager, **warehouse_cfg}
             if warehouse_cfg['id'] == 'RawMaterial':
-                self.raw_material = RawMaterial(**common_args)
+                self.raw_material = RawMaterial(**common_args, kpi_calculator=self.kpi_calculator)
             elif warehouse_cfg['id'] == 'Warehouse':
                 self.warehouse = Warehouse(**common_args)
 
@@ -91,6 +94,22 @@ class Factory:
         return {}
 
 
+    def _update_active_faults_count(self):
+        """Periodically update the active faults count in KPI calculator."""
+        while True:
+            # Count total active faults across all lines
+            total_active_faults = 0
+            for line in self.lines.values():
+                if line.fault_system:
+                    total_active_faults += len(line.fault_system.active_faults)
+            
+            # Update KPI calculator with the total count
+            if self.kpi_calculator:
+                self.kpi_calculator.update_active_faults_count(total_active_faults)
+            
+            # Wait for 1 second before next update
+            yield self.env.timeout(1.0)
+    
     def run(self, until: int):
         """Runs the simulation for a given duration."""
         self.env.run(until=until)

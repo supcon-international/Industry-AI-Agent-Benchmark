@@ -219,17 +219,17 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                 print(f"{'='*60}\n")
                 
                 # 发布得分到MQTT（不包含原始指标）
-                result_topic = RESULT_TOPIC
+                result_topic = topic_manager.get_result_topic()
                 
 
                 scores_only = {
-                    "total_score": final_scores['total_score'],
-                    "efficiency_score": final_scores['efficiency_score'],
-                    "efficiency_components": str(final_scores['efficiency_components']),
-                    "quality_cost_score": final_scores['quality_cost_score'],
-                    "quality_cost_components": str(final_scores['quality_cost_components']),
-                    "agv_score": final_scores['agv_score'],
-                    "agv_components": str(final_scores['agv_components'])
+                    "total_score": round( final_scores['total_score'],2),
+                    "efficiency_score": round(final_scores['efficiency_score'],2),
+                    "efficiency_components": {k: round(v, 2) for k, v in final_scores['efficiency_components'].items()},
+                    "quality_cost_score": round(final_scores['quality_cost_score'],2),
+                    "quality_cost_components": {k: round(v, 2) for k, v in final_scores['quality_cost_components'].items()},
+                    "agv_score": round(final_scores['agv_score'],2),
+                    "agv_components": {k: round(v, 2) for k, v in final_scores['agv_components'].items()}
                 }
                 result_json = json.dumps(scores_only)
             

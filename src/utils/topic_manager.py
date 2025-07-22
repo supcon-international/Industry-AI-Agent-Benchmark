@@ -47,7 +47,11 @@ class TopicManager:
         
     def get_kpi_topic(self) -> str:
         """Generates topic for factory-wide KPI updates."""
-        return f"{self.root}/kpi"
+        return f"{self.root}/kpi/status"
+    
+    def get_result_topic(self) -> str:
+        """Generates topic for factory-wide result updates."""
+        return f"{self.root}/result/status"
 
     def get_agent_command_topic_wildcard(self) -> str:
         """Generates a wildcard topic for agent commands for all lines."""

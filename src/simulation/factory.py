@@ -91,6 +91,9 @@ class Factory:
         # Setup event handlers
         self._setup_event_handlers()
         
+        # Start process to update active faults count
+        self.env.process(self._update_active_faults_count())
+        
         # Start device status publishing
         self._start_status_publishing()
            
@@ -172,7 +175,7 @@ class Factory:
                 **warehouse_cfg
             }
             if warehouse_cfg['id'] == 'RawMaterial':
-                warehouse = RawMaterial(**common_args)
+                warehouse = RawMaterial(**common_args, kpi_calculator=self.kpi_calculator)
                 self.raw_material = warehouse  # Store dedicated reference
             elif warehouse_cfg['id'] == 'Warehouse':
                 warehouse = Warehouse(**common_args)
@@ -438,6 +441,21 @@ class Factory:
         # conveyor_cq → QualityCheck
         if 'QualityCheck' in self.stations and 'Conveyor_CQ' in self.conveyors:
             self.conveyors['Conveyor_CQ'].set_downstream_station(self.stations['QualityCheck'])
+    
+    def _update_active_faults_count(self):
+        """Periodically update the active faults count in KPI calculator."""
+        while True:
+            # For single-line factory, just count faults from the single FaultSystem
+            active_faults_count = 0
+            if self.fault_system:
+                active_faults_count = len(self.fault_system.active_faults)
+            
+            # Update KPI calculator with the count
+            if self.kpi_calculator:
+                self.kpi_calculator.update_active_faults_count(active_faults_count)
+            
+            # Wait for 1 second before next update
+            yield self.env.timeout(1.0)
 
 
 # Example of how to run the factory simulation

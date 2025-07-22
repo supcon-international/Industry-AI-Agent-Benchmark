@@ -89,10 +89,12 @@ class RawMaterial(BaseWarehouse):
         self,
         env: simpy.Environment,
         mqtt_client=None,
+        kpi_calculator=None,
         **config
     ):
         super().__init__(env=env, mqtt_client=mqtt_client, **config)
         self.device_type = "raw_material"  # Override device type
+        self.kpi_calculator = kpi_calculator
         self.stats = {
             "total_materials_supplied": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
@@ -109,6 +111,33 @@ class RawMaterial(BaseWarehouse):
         print(f"[{self.env.now:.2f}] 🔧 {self.id}: Create raw material {product.id} (type: {product_type})")
         self.buffer.put(product)
         self.publish_status(f"Supply raw material {product.id} (type: {product_type}) since order {order_id} is created")
+        return product
+
+    def pop(self, product_id: Optional[str] = None):
+        """
+        Override parent's pop method to add material cost calculation.
+        Material cost is added when product is taken from raw material warehouse.
+        """
+        # First get the product using parent's pop method
+        product = yield from super().pop(product_id)
+        
+        # Add material cost to KPI when product is taken
+        if self.kpi_calculator and hasattr(product, 'product_type'):
+            material_cost = self.kpi_calculator.cost_parameters['material_cost_per_product'].get(
+                product.product_type, 10.0  # Default to P1 cost if not found
+            )
+            self.kpi_calculator.stats.material_costs += material_cost
+            
+            # Also update the order tracking if it exists
+            if hasattr(product, 'order_id') and product.order_id in self.kpi_calculator.active_orders:
+                order_tracking = self.kpi_calculator.active_orders[product.order_id]
+                order_tracking.total_cost += material_cost
+            
+            print(f"[{self.env.now:.2f}] 💰 {self.id}: Added material cost ${material_cost:.2f} for {product.product_type}")
+            
+            # Trigger KPI update
+            self.kpi_calculator._check_and_publish_kpi_update()
+        
         return product
 
     def is_full(self) -> bool:

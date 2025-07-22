@@ -36,7 +36,7 @@ class Conveyor(BaseConveyor):
         self.publish_status("Conveyor initialized")
                # Initialize device utilization tracking
         if self.kpi_calculator:
-            self.kpi_calculator.update_device_utilization(self.id, 0.0)
+            self.kpi_calculator.update_device_utilization(self.id, self.line_id, 0.0)
         
         # Start background process to update total time for utilization calculation
         self.env.process(self._update_total_time())
@@ -117,7 +117,7 @@ class Conveyor(BaseConveyor):
         while True:
             yield self.env.timeout(10.0)  # Update every 10 seconds
             if self.kpi_calculator:
-                self.kpi_calculator.update_device_utilization(self.id, self.env.now)
+                self.kpi_calculator.update_device_utilization(self.id, self.line_id, self.env.now)
 
     def run(self):
         """Main operational loop for the conveyor. This should NOT be interrupted by faults."""
@@ -216,9 +216,8 @@ class Conveyor(BaseConveyor):
             is_first_product = self.buffer.items[0].id == product.id
             # Report energy cost and working time for this transfer
             if self.kpi_calculator:
-                self.kpi_calculator.add_energy_cost(self.id, remaining_time, is_peak_hour=False)
-                # Track working time for KPI utilization calculation
-                self.kpi_calculator.track_device_working_time(self.id, remaining_time)
+                self.kpi_calculator.add_energy_cost(self.id, self.line_id, remaining_time, is_peak_hour=False)
+                # Working time is already tracked in add_energy_cost
             
             # 传输完成，从buffer获取产品（get）
             actual_product = yield self.buffer.get()
@@ -432,7 +431,7 @@ class TripleBufferConveyor(BaseConveyor):
         
         # Initialize device utilization tracking
         if self.kpi_calculator:
-            self.kpi_calculator.update_device_utilization(self.id, 0.0)
+            self.kpi_calculator.update_device_utilization(self.id, self.line_id, 0.0)
         
         # Start background process to update total time for utilization calculation
         self.env.process(self._update_total_time())
@@ -626,9 +625,8 @@ class TripleBufferConveyor(BaseConveyor):
 
             # Report energy cost and working time for this transfer
             if self.kpi_calculator:
-                self.kpi_calculator.add_energy_cost(self.id, self.transfer_time, is_peak_hour=False)
-                # Track working time for KPI utilization calculation
-                self.kpi_calculator.track_device_working_time(self.id, self.transfer_time)
+                self.kpi_calculator.add_energy_cost(self.id, self.line_id, self.transfer_time, is_peak_hour=False)
+                # Working time is already tracked in add_energy_cost
             
             # 获取产品
             actual_product = yield self.main_buffer.get()
@@ -771,7 +769,7 @@ class TripleBufferConveyor(BaseConveyor):
         while True:
             yield self.env.timeout(10.0)  # Update every 10 seconds
             if self.kpi_calculator:
-                self.kpi_calculator.update_device_utilization(self.id, self.env.now)
+                self.kpi_calculator.update_device_utilization(self.id, self.line_id, self.env.now)
         self.set_status(DeviceStatus.WORKING)
         self.publish_status()
         

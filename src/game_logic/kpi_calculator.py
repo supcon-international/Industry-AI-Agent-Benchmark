@@ -1,6 +1,6 @@
 # src/game_logic/kpi_calculator.py
 import simpy
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 from config.schemas import KPIUpdate, NewOrder
@@ -8,14 +8,18 @@ from config.topics import KPI_UPDATE_TOPIC
 from src.utils.mqtt_client import MQTTClient
 from src.utils.topic_manager import TopicManager
 
+if TYPE_CHECKING:
+    from src.simulation.entities.product import Product
+
 @dataclass
 class ProductTracking:
     """Track individual product for production cycle calculation."""
     product_id: str
     product_type: str  # P1, P2, P3
     order_id: str
-    start_time: float  # When it enters the production line
+    start_time: float  # When order is created
     theoretical_time: float  # Based on product type
+    production_start_time: Optional[float] = None  # When it actually enters production (StationA)
     end_time: Optional[float] = None  # When it exits the production line
 
 @dataclass
@@ -130,7 +134,7 @@ class KPICalculator:
             'material_cost_per_product': kpi_costs.get('material_cost_per_product', {'P1': 10.0, 'P2': 15.0, 'P3': 20.0}),
             'energy_cost_per_second': kpi_costs.get('energy_cost_per_second', 0.1),
             'energy_cost_multiplier_peak': kpi_costs.get('energy_cost_multiplier_peak', 1.5),
-            'maintenance_cost_base': kpi_costs.get('maintenance_cost_base', 50.0),
+            'maintenance_cost_base': kpi_costs.get('maintenance_cost_base', 8.0),
             'scrap_cost_multiplier': kpi_costs.get('scrap_cost_multiplier', 0.8),
         }
         
@@ -147,6 +151,9 @@ class KPICalculator:
         
         # Track last KPI state for change detection
         self.last_kpi_hash = None
+        
+        # Track active faults count
+        self._active_faults_count = 0
 
     def _check_and_publish_kpi_update(self):
         """Calculate KPIs and publish only if changed."""
@@ -187,12 +194,8 @@ class KPICalculator:
         # Trigger KPI update on new order
         self._check_and_publish_kpi_update()
         
-        # Add material costs and create product tracking
+        # Create product tracking for each product (material costs will be added when taken from warehouse)
         for item in order.items:
-            material_cost = self.cost_parameters['material_cost_per_product'][item.product_type]
-            order_tracking.total_cost += material_cost * item.quantity
-            self.stats.material_costs += material_cost * item.quantity
-            
             # Create product tracking for each product
             for i in range(item.quantity):
                 product_id = f"{order.order_id}_P{item.product_type}_{i}"
@@ -200,7 +203,7 @@ class KPICalculator:
                     product_id=product_id,
                     product_type=item.product_type,
                     order_id=order.order_id,
-                    start_time=self.env.now,  # Assuming production starts immediately
+                    start_time=self.env.now,  # Order creation time
                     theoretical_time=self.theoretical_production_times[item.product_type]
                 )
                 order_tracking.products.append(product_tracking)
@@ -220,7 +223,10 @@ class KPICalculator:
             for product in order.products:
                 if product.product_type == product_type and product.end_time is None:
                     product.end_time = self.env.now
-                    actual_time = product.end_time - product.start_time
+                    
+                    # Use production_start_time if available, otherwise fall back to start_time
+                    actual_start = product.production_start_time if product.production_start_time is not None else product.start_time
+                    actual_time = product.end_time - actual_start
                     theoretical_time = product.theoretical_time
                     
                     # Add to weighted production cycle sum only for passed products
@@ -266,18 +272,31 @@ class KPICalculator:
         # Trigger KPI update on order completion
         self._check_and_publish_kpi_update()
 
-    def add_energy_cost(self, device_id: str, duration: float, is_peak_hour: bool = False):
+    def add_energy_cost(self, device_id: str, line_id: Optional[str], duration: float, is_peak_hour: bool = False):
         """Add energy costs for device operation."""
+        # Validate parameters to help debug
+        try:
+            if not isinstance(duration, (int, float)):
+                raise TypeError(f"Duration must be a number, got {type(duration).__name__}: {duration}")
+        except Exception as e:
+            print(f"[DEBUG] add_energy_cost called with: device_id={device_id}, line_id={line_id}, duration={duration}, is_peak_hour={is_peak_hour}")
+            raise
+        
         base_cost = duration * self.cost_parameters['energy_cost_per_second']
         if is_peak_hour:
             base_cost *= self.cost_parameters['energy_cost_multiplier_peak']
         
         self.stats.energy_costs += base_cost
         
-        # Update device working time
-        if device_id not in self.stats.device_working_time:
-            self.stats.device_working_time[device_id] = 0.0
-        self.stats.device_working_time[device_id] += duration
+        # Update device working time with line_id to avoid conflicts
+        # Note: Some devices (Station) only use this method to track working time
+        internal_device_key = f"{line_id}_{device_id}" if line_id else device_id
+        if internal_device_key not in self.stats.device_working_time:
+            self.stats.device_working_time[internal_device_key] = 0.0
+        self.stats.device_working_time[internal_device_key] += duration
+        
+        # Trigger KPI update on energy cost change
+        self._check_and_publish_kpi_update()
 
     def add_maintenance_cost(self, _device_id: str, _maintenance_type: str, was_correct_diagnosis: bool):
         """Add maintenance costs and track diagnosis accuracy."""
@@ -296,7 +315,27 @@ class KPICalculator:
         # Trigger KPI update on maintenance event
         self._check_and_publish_kpi_update()
     
-    def register_agv_charge(self, agv_id: str, is_active: bool, charge_duration: float):
+    def update_active_faults_count(self, count: int):
+        """Update the active faults count (called by FaultSystem)"""
+        self._active_faults_count = count
+        self._check_and_publish_kpi_update()
+    
+    def mark_production_start(self, product: 'Product'):
+        """Mark when a product actually starts production (enters first station)."""
+        # Find the product tracking by order_id and product_type
+        order_id = product.order_id
+        product_type = product.product_type
+        
+        # Look for the first unstarted product of this type in this order
+        for tracking_id, tracking in self.active_products.items():
+            if (tracking.order_id == order_id and 
+                tracking.product_type == product_type and 
+                tracking.production_start_time is None):
+                tracking.production_start_time = self.env.now
+                print(f"[KPI] Product {product.id} (tracking: {tracking_id}) started production at {self.env.now:.2f}")
+                break
+    
+    def register_agv_charge(self, agv_id: str, line_id: Optional[str], is_active: bool, charge_duration: float):
         """Register AGV charging event."""
         if is_active:
             self.stats.agv_active_charges += 1
@@ -305,32 +344,41 @@ class KPICalculator:
         
         self.stats.agv_total_charge_time += charge_duration
         
-        # Update AGV charge time tracking
-        if agv_id not in self.stats.agv_charge_time:
-            self.stats.agv_charge_time[agv_id] = 0.0
-        self.stats.agv_charge_time[agv_id] += charge_duration
+        # Update AGV charge time tracking with line_id to avoid conflicts
+        internal_agv_key = f"{line_id}_{agv_id}" if line_id else agv_id
+        if internal_agv_key not in self.stats.agv_charge_time:
+            self.stats.agv_charge_time[internal_agv_key] = 0.0
+        self.stats.agv_charge_time[internal_agv_key] += charge_duration
         
         # Trigger KPI update on charging event
         self._check_and_publish_kpi_update()
     
-    def register_agv_task_complete(self, _agv_id: str):
+    def register_agv_task_complete(self, _agv_id: str, _line_id: Optional[str] = None):
         """Register AGV task completion."""
         self.stats.agv_completed_tasks += 1
         
         # Trigger KPI update on AGV task completion
         self._check_and_publish_kpi_update()
     
-    def update_agv_transport_time(self, agv_id: str, transport_time: float):
+    def update_agv_transport_time(self, agv_id: str, line_id: Optional[str], transport_time: float):
         """Update AGV transport time."""
-        if agv_id not in self.stats.agv_transport_time:
-            self.stats.agv_transport_time[agv_id] = 0.0
-        self.stats.agv_transport_time[agv_id] += transport_time
+        internal_agv_key = f"{line_id}_{agv_id}" if line_id else agv_id
+        if internal_agv_key not in self.stats.agv_transport_time:
+            self.stats.agv_transport_time[internal_agv_key] = 0.0
+        self.stats.agv_transport_time[internal_agv_key] += transport_time
+        
+        # Trigger KPI update on AGV transport time change
+        self._check_and_publish_kpi_update()
     
-    def update_agv_fault_time(self, agv_id: str, fault_time: float):
+    def update_agv_fault_time(self, agv_id: str, line_id: Optional[str], fault_time: float):
         """Update AGV fault time."""
-        if agv_id not in self.stats.agv_fault_time:
-            self.stats.agv_fault_time[agv_id] = 0.0
-        self.stats.agv_fault_time[agv_id] += fault_time
+        internal_agv_key = f"{line_id}_{agv_id}" if line_id else agv_id
+        if internal_agv_key not in self.stats.agv_fault_time:
+            self.stats.agv_fault_time[internal_agv_key] = 0.0
+        self.stats.agv_fault_time[internal_agv_key] += fault_time
+        
+        # Trigger KPI update on AGV fault time change
+        self._check_and_publish_kpi_update()
 
     def add_fault_recovery_time(self, recovery_time: float):
         """Track fault recovery time for robustness metrics."""
@@ -339,18 +387,26 @@ class KPICalculator:
         # Trigger KPI update on fault recovery
         self._check_and_publish_kpi_update()
 
-    def update_device_utilization(self, device_id: str, total_time: float):
+    def update_device_utilization(self, device_id: str, line_id: Optional[str], total_time: float):
         """Update device total time for utilization calculation."""
-        self.stats.device_total_time[device_id] = total_time
+        internal_device_key = f"{line_id}_{device_id}" if line_id else device_id
+        self.stats.device_total_time[internal_device_key] = total_time
         # Ensure device has a working_time entry to prevent KeyError
-        if device_id not in self.stats.device_working_time:
-            self.stats.device_working_time[device_id] = 0.0
+        if internal_device_key not in self.stats.device_working_time:
+            self.stats.device_working_time[internal_device_key] = 0.0
+        
+        # Trigger KPI update on device utilization change
+        self._check_and_publish_kpi_update()
     
-    def track_device_working_time(self, device_id: str, duration: float):
+    def track_device_working_time(self, device_id: str, line_id: Optional[str], duration: float):
         """Track actual working time for a device"""
-        if device_id not in self.stats.device_working_time:
-            self.stats.device_working_time[device_id] = 0.0
-        self.stats.device_working_time[device_id] += duration
+        internal_device_key = f"{line_id}_{device_id}" if line_id else device_id
+        if internal_device_key not in self.stats.device_working_time:
+            self.stats.device_working_time[internal_device_key] = 0.0
+        self.stats.device_working_time[internal_device_key] += duration
+        
+        # Trigger KPI update on device working time change
+        self._check_and_publish_kpi_update()
 
     def calculate_current_kpis(self) -> KPIUpdate:
         """Calculate current KPI values according to PRD 3.4 Section 2.8 formulas."""
@@ -365,10 +421,25 @@ class KPICalculator:
         )
         
         # 2. 加权平均生产周期 (实际时间与理论时间的比率)
-        average_production_cycle = (
+        # 改进：考虑产品完成率，避免选择性完成快速产品的策略
+        base_cycle_ratio = (
             (self.stats.weighted_production_cycle_sum / self.stats.quality_passed_products)
-            if self.stats.quality_passed_products > 0 else 0.0  # No production = 0 efficiency
+            if self.stats.quality_passed_products > 0 else 0.0
         )
+        
+        # 计算产品完成率（已完成的产品数 / 已开始生产的产品总数）
+        total_started_products = len(self.active_products) + self.stats.total_products
+        product_completion_rate = (
+            self.stats.quality_passed_products / total_started_products
+            if total_started_products > 0 else 0.0
+        )
+        
+        # 应用完成率权重：完成率低会增加生产周期值（惩罚）
+        # 如果完成率是100%，则不影响；如果完成率是50%，则周期值翻倍
+        if product_completion_rate > 0:
+            average_production_cycle = base_cycle_ratio / product_completion_rate
+        else:
+            average_production_cycle = 0.0  # No production = 0 efficiency
         
         # 3. 按时交付率 (这个指标与订单完成率重复，可用于额外分析)
         on_time_delivery_rate = (
@@ -464,7 +535,7 @@ class KPICalculator:
             completed_orders=self.stats.completed_orders,
             active_orders=len(self.active_orders),
             total_products=self.stats.total_products,
-            active_faults=0  # Will be updated by fault system
+            active_faults=self._active_faults_count
         )
 
     def _publish_kpi_update(self, kpi_update: KPIUpdate):
@@ -568,7 +639,7 @@ class KPICalculator:
         # 包含：充电策略效率、AGV能效比、AGV利用率
         agv_components = {
             'charge_strategy': min(100, kpis.charge_strategy_efficiency),  # 已经是百分比
-            'energy_efficiency': min(100, kpis.agv_energy_efficiency * 10),  # 假设每秒0.1个任务为满分
+            'energy_efficiency': min(100, kpis.agv_energy_efficiency * 100),  # 0.1 tasks/s = 100分 (每秒完成0.1个任务为满分)
             'utilization': min(100, kpis.agv_utilization)  # 已经是百分比
         }
         

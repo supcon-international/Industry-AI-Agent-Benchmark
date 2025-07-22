@@ -217,10 +217,10 @@ class AGV(Vehicle):
             
             # Report task completion, transport time, and energy cost to KPI calculator
             if self.kpi_calculator:
-                self.kpi_calculator.register_agv_task_complete(self.id)
-                self.kpi_calculator.update_agv_transport_time(self.id, travel_time)
+                self.kpi_calculator.register_agv_task_complete(self.id, self.line_id)
+                self.kpi_calculator.update_agv_transport_time(self.id, self.line_id, travel_time)
                 # Add energy cost for AGV movement
-                self.kpi_calculator.add_energy_cost(f"AGV_{self.id}", travel_time, is_peak_hour=False)
+                self.kpi_calculator.add_energy_cost(f"AGV_{self.id}", self.line_id, travel_time, is_peak_hour=False)
             
             print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
             
@@ -491,9 +491,9 @@ class AGV(Vehicle):
         if self.kpi_calculator and hasattr(self, '_charge_start_time'):
             actual_charge_duration = self.env.now - self._charge_start_time
             is_active = getattr(self, '_is_active_charge', False)
-            self.kpi_calculator.register_agv_charge(self.id, is_active, actual_charge_duration)
+            self.kpi_calculator.register_agv_charge(self.id, self.line_id, is_active, actual_charge_duration)
             # Add energy cost for charging (charging typically uses more power)
-            self.kpi_calculator.add_energy_cost(f"AGV_{self.id}_charging", charge_time, is_peak_hour=False)
+            self.kpi_calculator.add_energy_cost(f"AGV_{self.id}_charging", self.line_id, charge_time, is_peak_hour=False)
             # Clean up temporary attributes
             if hasattr(self, '_charge_start_time'):
                 del self._charge_start_time
@@ -633,7 +633,7 @@ class AGV(Vehicle):
             elif self.status == DeviceStatus.FAULT and new_status != DeviceStatus.FAULT:
                 if hasattr(self, '_fault_start_time'):
                     fault_duration = self.env.now - self._fault_start_time
-                    self.kpi_calculator.update_agv_fault_time(self.id, fault_duration)
+                    self.kpi_calculator.update_agv_fault_time(self.id, self.line_id, fault_duration)
                     del self._fault_start_time
         
         super().set_status(new_status)
