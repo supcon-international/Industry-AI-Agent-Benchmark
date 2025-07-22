@@ -136,7 +136,11 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
 
         elif op == "5":
             line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
-
+            
+            if line_id not in factory.lines:
+                print(f"生产线 {line_id} 不存在！")
+                continue
+            
             if not hasattr(factory.lines[line_id], 'fault_system') or factory.lines[line_id].fault_system is None:
                 print("故障系统未初始化，请先初始化故障系统。")
                 continue
@@ -324,5 +328,7 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
             print("无效选择，请重试。")
             continue
         
-        mqtt_client.publish(topic_manager.get_agent_command_topic(line_id), json.dumps(cmd))
-        print(f"已发送命令: {cmd}")
+        # Only publish command if cmd was defined and line_id exists
+        if 'cmd' in locals() and 'line_id' in locals():
+            mqtt_client.publish(topic_manager.get_agent_command_topic(line_id), json.dumps(cmd))
+            print(f"已发送命令: {cmd}")

@@ -72,6 +72,8 @@ production_lines:
           P3: [5, 5]
         output_buffer_capacity: 4
         interacting_points: [P7, P8]
+        # pass_threshold: 99
+        # scrap_threshold: 98
         
     agvs:
       - id: "AGV_1"
@@ -89,8 +91,9 @@ production_lines:
           P9: [95, 15]
           P10: [10, 10]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
@@ -110,8 +113,9 @@ production_lines:
           P9: [95, 25]
           P10: [10, 30]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
@@ -185,8 +189,9 @@ production_lines:
           P9: [95, 55]
           P10: [10, 50]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
@@ -206,8 +211,9 @@ production_lines:
           P9: [95, 65]
           P10: [10, 70]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
@@ -280,8 +286,9 @@ production_lines:
           P9: [95, 95]
           P10: [10, 90]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
@@ -301,8 +308,9 @@ production_lines:
           P9: [95, 105]
           P10: [10, 110]
         speed_mps: 2.0
+        battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 5.0
+        low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1

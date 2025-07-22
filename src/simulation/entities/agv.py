@@ -40,7 +40,8 @@ class AGV(Vehicle):
         speed_mps: float,
         payload_capacity: int = 1,
         operation_time: float = 1.0,
-        low_battery_threshold: float = 5.0,  # 低电量阈值
+        battery_level: float = 50.0,
+        low_battery_threshold: float = 10.0,  # 低电量阈值
         charging_point: str = "P10",  # 充电点坐标(可为路径点名或坐标)
         charging_speed: float = 3.33,  # 充电速度(30秒充满)
         battery_consumption_per_meter: float = 0.1,  # 每米消耗0.1%电量
@@ -57,7 +58,7 @@ class AGV(Vehicle):
         super().__init__(env, id, position, speed_mps, mqtt_client)
         self.topic_manager = topic_manager
         self.line_id = line_id
-        self.battery_level = 40.0
+        self.battery_level = battery_level
         self.payload_capacity = payload_capacity
         self.payload = simpy.Store(env, capacity=payload_capacity)
         self.operation_time = operation_time
@@ -96,7 +97,7 @@ class AGV(Vehicle):
         self.battery_level = max(0.0, self.battery_level - amount)
         
         if old_level > self.low_battery_threshold and self.battery_level <= self.low_battery_threshold:
-            msg = f"[{self.env.now:.2f}] 🔋 {self.id}: 电量过低！当前电量: {self.battery_level:.1f}% (原因: {reason})"
+            msg = f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low! Current battery: {self.battery_level:.1f}% (Reason: {reason})"
             # 电量首次降到阈值以下时告警
             self.publish_status(msg)
             print(msg)
@@ -108,23 +109,28 @@ class AGV(Vehicle):
     def can_complete_task(self, estimated_travel_time: float = 0.0, estimated_actions: int = 0, target_point: Optional[str] = None) -> bool:
         """预估是否有足够电量完成任务"""
         # Convert travel time to estimated distance for battery calculation
-        estimated_distance = estimated_travel_time * self.speed_mps
+        estimated_distance = estimated_travel_time * self.speed_mps #max is 20s * 2m/s = 40m
         estimated_consumption = (
-            estimated_distance * self.battery_consumption_per_meter +
+            estimated_distance * self.battery_consumption_per_meter + # max is 40m * 0.1 = 4
             estimated_actions * self.battery_consumption_per_action
         )
+        # 如果目标点就是充电点，不需要预留返回充电点的电量
+        if target_point == self.charging_point:
+            total_needed = estimated_consumption + 1.0  # 只需要1%安全余量
+            return self.battery_level >= total_needed
+            
         if target_point:
         # 预留回到充电点的电量 (使用路径时间表)
-            return_time = get_travel_time(target_point, self.charging_point)
+            return_time = get_travel_time(target_point, self.charging_point) # roughly 13s
         else:
-            return_time = get_travel_time(self.current_point, self.charging_point)
+            return_time = get_travel_time(self.current_point, self.charging_point) 
         if return_time < 0:
             # If no direct path to charging point, use fallback calculation
             return_distance = math.dist(self.position, self.path_points[self.charging_point])
             return_consumption = return_distance * self.battery_consumption_per_meter
         else:
-            return_distance = return_time * self.speed_mps
-            return_consumption = return_distance * self.battery_consumption_per_meter
+            return_distance = return_time * self.speed_mps # roughly 26m
+            return_consumption = return_distance * self.battery_consumption_per_meter # roughly 2.6
         
         total_needed = estimated_consumption + return_consumption + 3.0  # 3%安全余量
         return self.battery_level >= total_needed
@@ -172,7 +178,15 @@ class AGV(Vehicle):
                 return False, msg
                 
             # check if battery is enough
-            if not self.can_complete_task(travel_time, 1, target_point):
+            # Special case: if target is charging point, only check if we can reach it
+            if target_point == self.charging_point:
+                distance_to_charging = travel_time * self.speed_mps
+                required_battery = distance_to_charging * self.battery_consumption_per_meter + 1.0  # 1% safety margin
+                if self.battery_level < required_battery:
+                    msg = f"Battery critically low ({self.battery_level:.1f}%), cannot even reach charging point"
+                    print(f"[{self.env.now:.2f}] 🚨 {self.id}: {msg}")
+                    return False, msg
+            elif not self.can_complete_task(travel_time, 1, target_point):
                 msg = f"Battery level is too low to move to {target_point}"
                 print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
                 self.stats["tasks_interrupted"] += 1
@@ -440,7 +454,7 @@ class AGV(Vehicle):
             
         return success, feedback, product
 
-    def charge_battery(self, target_level: float = 100.0, message: Optional[str] = None):
+    def charge_battery(self, target_level: float = 100.0, message: Optional[str] = None, is_emergency: bool = False):
         """Charge battery to target level. Returns (success, feedback_message)"""
         if self.status == DeviceStatus.CHARGING:
             msg = f"already charging"
@@ -507,7 +521,7 @@ class AGV(Vehicle):
             self._charge_start_time = self.env.now
         
         # charge to safe level
-        yield self.env.process(self.charge_battery(50.0, "emergency charging to 50%"))
+        yield self.env.process(self.charge_battery(50.0, "emergency charging to 50%", is_emergency=True))
 
     def voluntary_charge(self, target_level: float = 80.0):
         """Voluntary charging to maintain good battery level. Returns (success, feedback_message)"""
