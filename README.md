@@ -4,23 +4,28 @@
 
 ### 1. Environment Setup
 
-Download [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- Download [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Clone project
+- Clone project
 
 ```bash
 git clone https://github.com/SUPCON-AdventureX/25-SUPCON-AdventureX-Hackthon.git
 cd 25-SUPCON-AdventureX-Hackthon
+```
+
+- Install dependencies
+
+```bash
 uv sync
 ```
 
 ### 2. Run Simulation
 
-设置环境变量TOPIC_ROOT来分隔不同选手，默认值为`NLDF_DEFAULT`
+设置环境变量`TOPIC_ROOT`作为仿真系统mqtt的client id和topic root来分隔不同选手，默认值获取顺序为`TOPIC_ROOT`, `USERNAME`, `USER`的环境变量，否则默认"NLDF_TEST"
 
 - add `--menu` arg to enable interactive input thread for test only
 - add `--no-mqtt` arg to disable mqtt communication for debug offline
@@ -31,7 +36,9 @@ uv run run_multi_line_simulation.py (--menu) (--no-mqtt)
 
 ## Background
 
-语言是新的协议BALABALA；Agent成了每个领域绕不开的革命火种，在工业领域也是一样，我们作为一家工业领域的国内龙头企业，也不断的在尝试将最新的agent技术融入到正常的工业厂房的流程中。随着ai agent的发展，我们进一步畅想，能否有个agent系统可以人类一样用自然语言进行决策？我们简单搭建了一个可操控的模拟工厂，由你来大显身手。
+Agent 成了每个领域绕不开的革命火种，在工业领域亦是如此。作为国内工业自动化的龙头企业，我们正在积极尝试将最前沿的 agent 技术引入真实产线，推动传统工厂向自适应、自组织、自优化系统演进。
+我们进一步畅想：能否构建一个像人类一样通过语言决策的智能体系统？可以想象机器之间对话：“我这边快满了，暂停投料。”
+“收到，我先缓一轮。”用语言做到理解彼此、协作应变、自主决策，实现工厂收益最大化的同时稳定运行。为此，我们搭建了一个可控的模拟工厂，等待你来赋予它思维与行动，探索 agent 与工业协作的新可能。
 
 ## 场景解释
 
@@ -142,6 +149,16 @@ sequenceDiagram
 }
 ```
 
+系统反馈 `response/{line_id}` 的消息如下：
+
+```json
+{
+  "timestamp": "float (仿真时间戳)",
+  "command_id": "str (来自于选手的command_id)",
+  "response": "str (反馈信息)",
+}
+```
+
  支持的指令 `action` 和所需 `params`
 
 | Action   | 描述                          | Target | `params` 示例                       |
@@ -150,4 +167,5 @@ sequenceDiagram
 | `charge` | 命令 AGV 主动充电             | AGV ID | `{"target_level": 80.0}`(default: 80.0)                                |
 | `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{}` |
 | `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{"product_id": "Prod_1_XXXXXXX"}`(only can be used in RawMaterial, else will be ignored) |
+| `get_result` | 获取当前工厂的KPI结果 | Any | `{}` |
 ---

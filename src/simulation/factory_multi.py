@@ -21,8 +21,13 @@ class Factory:
         self.no_faults_mode = no_faults
         
         # Read player name from environment variable
-        player_name = os.getenv("TOPIC_ROOT", "NLDF_DEFAULT")
-        self.topic_manager = TopicManager(player_name)
+        topic_root =(
+            os.getenv("TOPIC_ROOT")
+            or os.getenv("USERNAME")
+            or os.getenv("USER")
+            or "NLDF_TEST"
+        )
+        self.topic_manager = TopicManager(topic_root)
 
         self.lines: Dict[str, Line] = {}
         self.raw_material: RawMaterial

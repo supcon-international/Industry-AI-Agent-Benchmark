@@ -39,12 +39,17 @@ class MultiLineFactorySimulation:
     def initialize(self, no_faults=False, no_mqtt=False):
         """Initialize all simulation components."""
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
-        
-        client_name = os.getenv("MY_CLIENT", "NLDF_TEST")
+        # 优先使用 CLIENT_ID，其次 USERNAME/USER，最后默认值，确保 client_name 一定为 str
+        client_name = (
+            os.getenv("TOPIC_ROOT")
+            or os.getenv("USERNAME")
+            or os.getenv("USER")
+            or "NLDF_TEST"
+        )
         self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, client_name)
         
         # Connect to MQTT
-        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
+        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, client_name: {client_name}")
 
         if not no_mqtt:
             self.mqtt_client.connect()
