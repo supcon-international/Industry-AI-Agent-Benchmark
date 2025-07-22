@@ -67,7 +67,11 @@ class Line:
             self.stations[station.id] = station
 
         for agv_cfg in self.config.get('agvs', []):
-            agv = AGV(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, fault_system=self.fault_system, kpi_calculator=self.kpi_calculator,line_id=self.name, **agv_cfg)
+            # Get agv_operations for this specific AGV
+            agv_operations = self.config.get('agv_operations', {}).get(agv_cfg['id'], {})
+            agv = AGV(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, 
+                     fault_system=self.fault_system, kpi_calculator=self.kpi_calculator,
+                     line_id=self.name, agv_operations=agv_operations, **agv_cfg)
             self.agvs[agv.id] = agv
 
         for conveyor_cfg in self.config.get('conveyors', []):

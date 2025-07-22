@@ -46,6 +46,7 @@ def auto_feed_station_a(factory: Factory, line_id: str, interval: float = 2.0, p
             # 检查 buffer 是否已满
             if len(station_a.buffer.items) < station_a.buffer.capacity:
                 station_a.buffer.put(product)
+                product.update_location(station_a.id, factory.env.now)
                 product.add_history(factory.env.now, f"Auto-fed to StationA in {line_id}")
                 print(f"{factory.env.now:.2f} ✅ 添加产品 {product.id} (类型: {product_type}) 到 {line_id} StationA")
                 # 发布状态更新
@@ -104,18 +105,8 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
             line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
             agv_id_short = input("请输入AGV编号 (e.g., 1, 2): ").strip()
             agv_id = f"AGV_{agv_id_short}"
-            
-            prompt = load_prompt if action == "load" else unload_prompt
-            device_id_short = input(prompt).strip().upper()
-            device_id = load_unload_devices.get(device_id_short)
-
-            if not device_id:
-                print("无效设备编号，请重试。")
-                continue
-
-            buffer_type = input("请输入buffer类型 (N.A./output_buffer/upper/lower): ").strip()
-            params = {"device_id": device_id, "buffer_type": buffer_type}
-
+           
+            params = {}
             if action == "load":
                 product_id = input("请输入产品编号（可选）: ").strip()
                 if product_id:

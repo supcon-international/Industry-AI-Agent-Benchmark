@@ -490,10 +490,10 @@ graph TD
 | Action   | 描述                          | Target | `params` 示例                       |
 | :------- | :---------------------------- | :----- | :---------------------------------- |
 | `move`   | 命令 AGV 移动到指定路径点     | AGV ID | `{"destination_id": "P9"}`          |
-| `charge` | 命令 AGV 主动充电             | AGV ID | `{}`                                |
-| `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{"target_station_id": "StationC"}` |
-| `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{"source_station_id": "StationC"}` |
-| `repair` | 命令 AGV 前往帮助维修(未实现) | AGV ID | `{"target_station_id": "StationC"}` |
+| `charge` | 命令 AGV 主动充电             | AGV ID | `{"target_level": 80.0}`(default: 80.0)                                |
+| `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{}` |
+| `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{"product_id": "Prod_1_XXXXXXX"}`(only can be used in RawMaterial, else will be ignored) |
+| `repair` | 命令 AGV 前往帮助维修(未实现) | AGV ID | `{}` |
 
 ---
 
