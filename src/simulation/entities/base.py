@@ -117,7 +117,10 @@ class Device:
 
     def recover(self):
         """Default recovery logic."""
-        self.set_status(DeviceStatus.IDLE)
+        # 只有当设备处于FAULT状态时才恢复
+        # 避免覆盖其他合法状态（如BLOCKED）
+        if self.status == DeviceStatus.FAULT:
+            self.set_status(DeviceStatus.IDLE)
 
 class Vehicle(Device):
     """
