@@ -189,16 +189,16 @@ class MultiLineCommandHandler:
         self.factory.env.process(unload_process())
 
     def _handle_charge_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
-        target_level = params.get("target_level")
-        if not target_level:
-            self._publish_response(line.name, command_id, "'target_level' missing in charge command.")
-            return
-
         agv = line.agvs.get(agv_id)
         if not agv:
             self._publish_response(line.name, command_id, f"AGV '{agv_id}' not found in line '{line.name}'.")
             return
-            
+        
+        target_level = params.get("target_level")
+        if not target_level:
+            self._publish_response(line.name, command_id, "'target_level' missing in charge command, will charge to 80 by default")
+            target_level = 80.0
+
         def charge_process():
             success, message = yield from agv.voluntary_charge(target_level)
             self._publish_response(line.name, command_id, message)

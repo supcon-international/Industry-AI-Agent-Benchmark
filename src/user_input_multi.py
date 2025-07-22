@@ -46,6 +46,7 @@ def auto_feed_station_a(factory: Factory, line_id: str, interval: float = 2.0, p
             # 检查 buffer 是否已满
             if len(station_a.buffer.items) < station_a.buffer.capacity:
                 station_a.buffer.put(product)
+                product.update_location(station_a.id, factory.env.now)
                 product.add_history(factory.env.now, f"Auto-fed to StationA in {line_id}")
                 print(f"{factory.env.now:.2f} ✅ 添加产品 {product.id} (类型: {product_type}) 到 {line_id} StationA")
                 # 发布状态更新
