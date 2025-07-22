@@ -5,17 +5,11 @@ factory:
   name: "SUPCON AdventureX NLDF"
   description: "自然语言驱动智能制造仿真工厂"
 
-# KPI计算权重 (Global)
-kpi_weights:
-  production_efficiency: 0.40  # 生产效率 40%
-  cost_control: 0.30           # 成本控制 30%
-  robustness: 0.30             # 鲁棒性 30%
-
-# 系统性能参数 (Global)
-system:
-  status_publish_interval: 10.0  # 状态发布间隔 (秒)
-  simulation_step_size: 0.1      # 仿真步长 (秒)
-  max_concurrent_orders: 20      # 最大并发订单数
+# # 系统性能参数 (Global)
+# system:
+#   status_publish_interval: 10.0  # 状态发布间隔 (秒)
+#   simulation_step_size: 0.1      # 仿真步长 (秒)
+#   max_concurrent_orders: 20      # 最大并发订单数
 
 warehouses:
   - id: "RawMaterial"
@@ -118,7 +112,7 @@ production_lines:
         low_battery_threshold: 10.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
+        battery_consumption_per_meter: 0.5
         battery_consumption_per_action: 0.5
     agv_operations:
       AGV_1:

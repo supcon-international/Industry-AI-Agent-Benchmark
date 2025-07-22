@@ -191,7 +191,7 @@ kpi_costs:
     P1: 10.0
     P2: 15.0
     P3: 20.0
-  energy_cost_per_second: 0.1
+  energy_cost_per_second: 0.2
   energy_cost_multiplier_peak: 1.5
   maintenance_cost_base: 8.0  # ~25% of average product cost, ~80s of energy cost
   scrap_cost_multiplier: 0.8

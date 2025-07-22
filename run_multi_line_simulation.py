@@ -40,8 +40,8 @@ class MultiLineFactorySimulation:
         """Initialize all simulation components."""
         logger.info("🏭 Initializing Multi-Line Factory Simulation...")
         
-        # Create MQTT client first
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, "factory_simulation_ZXY_test")
+        client_name = os.getenv("MY_CLIENT", "NLDF_TEST")
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, client_name)
         
         # Connect to MQTT
         logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}")
@@ -69,9 +69,6 @@ class MultiLineFactorySimulation:
             raise e
         
         self.factory = Factory(layout_config, self.mqtt_client, no_faults=no_faults) # no_faults for cleaner testing
-        
-        # Create the factory with MQTT client
-        # self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
         logger.info(f"✅ Factory created with {len(self.factory.lines)} lines")
         
         # Create command handler (this will start listening for commands)

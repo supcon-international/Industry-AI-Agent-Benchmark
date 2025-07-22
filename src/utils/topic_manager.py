@@ -39,11 +39,11 @@ class TopicManager:
 
     def get_order_topic(self) -> str:
         """Generates topic for new order announcements."""
-        return f"{self.root}/orders/new"
+        return f"{self.root}/orders/status"
 
     def get_fault_alert_topic(self, line_id: str) -> str:
         """Generates topic for fault alerts."""
-        return f"{self.root}/{line_id}/alerts/fault"
+        return f"{self.root}/{line_id}/alerts"
         
     def get_kpi_topic(self) -> str:
         """Generates topic for factory-wide KPI updates."""

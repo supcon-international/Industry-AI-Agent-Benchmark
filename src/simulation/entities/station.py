@@ -355,9 +355,14 @@ class Station(Device):
                 self.current_product_total_time = None
                 self.current_product_elapsed_time = None
         
-        # 恢复后，设置为IDLE状态
-        self.set_status(DeviceStatus.IDLE)
-        msg = f"[{self.env.now:.2f}] ✅ Station {self.id} is recovered."
-        print(msg)
-        self.publish_status(msg)
+        # 只有当设备处于FAULT状态时才恢复
+        if self.status == DeviceStatus.FAULT:
+            self.set_status(DeviceStatus.IDLE)
+            msg = f"[{self.env.now:.2f}] ✅ Station {self.id} is recovered."
+            print(msg)
+            self.publish_status(msg)
+        else:
+            # 如果设备不是FAULT状态，只打印恢复尝试的信息
+            msg = f"[{self.env.now:.2f}] ℹ️ Station {self.id}: Recovery attempted, but status is {self.status.value}, not changing."
+            print(msg)
 
