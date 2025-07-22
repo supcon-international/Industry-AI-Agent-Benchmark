@@ -120,6 +120,29 @@ production_lines:
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
         battery_consumption_per_action: 0.5
+    agv_operations:
+      AGV_1:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "lower", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
+      AGV_2:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "upper", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
     conveyors:
       - id: "Conveyor_AB"
         position: [25, 20]
@@ -218,6 +241,29 @@ production_lines:
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
         battery_consumption_per_action: 0.5
+    agv_operations:
+      AGV_1:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "lower", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
+      AGV_2:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "upper", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
     conveyors:
       - id: "Conveyor_AB"
         position: [25, 60] # Changed Y coordinate
@@ -315,6 +361,29 @@ production_lines:
         charging_speed: 3.33
         battery_consumption_per_meter: 0.1
         battery_consumption_per_action: 0.5
+    agv_operations:
+      AGV_1:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "lower", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
+      AGV_2:
+        P0: {device: "RawMaterial", operations: ["load"]}
+        P1: {device: "StationA", operations: ["unload", "load"]}
+        P2: {device: "Conveyor_AB", operations: ["load"]}
+        P3: {device: "StationB", operations: ["unload", "load"]}
+        P4: {device: "Conveyor_BC", operations: ["load"]}
+        P5: {device: "StationC", operations: ["unload", "load"]}
+        P6: {device: "Conveyor_CQ", buffer: "upper", operations: ["load"]}
+        P7: {device: "QualityCheck", buffer: "buffer", operations: ["unload"]}
+        P8: {device: "QualityCheck", buffer: "output_buffer", operations: ["load"]}
+        P9: {device: "Warehouse", operations: ["unload"]}
     conveyors:
       - id: "Conveyor_AB"
         position: [25, 100] # Changed Y coordinate

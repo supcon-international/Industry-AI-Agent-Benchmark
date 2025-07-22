@@ -104,18 +104,8 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
             line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
             agv_id_short = input("请输入AGV编号 (e.g., 1, 2): ").strip()
             agv_id = f"AGV_{agv_id_short}"
-            
-            prompt = load_prompt if action == "load" else unload_prompt
-            device_id_short = input(prompt).strip().upper()
-            device_id = load_unload_devices.get(device_id_short)
-
-            if not device_id:
-                print("无效设备编号，请重试。")
-                continue
-
-            buffer_type = input("请输入buffer类型 (N.A./output_buffer/upper/lower): ").strip()
-            params = {"device_id": device_id, "buffer_type": buffer_type}
-
+           
+            params = {}
             if action == "load":
                 product_id = input("请输入产品编号（可选）: ").strip()
                 if product_id:

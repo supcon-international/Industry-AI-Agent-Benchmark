@@ -50,7 +50,8 @@ class AGV(Vehicle):
         mqtt_client=None,
         kpi_calculator=None,
         topic_manager: Optional[TopicManager] = None,
-        line_id: Optional[str] = None
+        line_id: Optional[str] = None,
+        agv_operations: Optional[Dict[str, Dict]] = None
     ):
         if position not in path_points.values():
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
@@ -66,6 +67,7 @@ class AGV(Vehicle):
         self.kpi_calculator = kpi_calculator
         self.current_point = list(path_points.keys())[list(path_points.values()).index(position)]
         self.path_points = path_points
+        self.agv_operations = agv_operations or {}  # Store AGV-specific operations mapping
         self.target_point = None # current target point if moving
         self.estimated_time = 0.0 # estimated time to complete the task or moving to the target point
         # 充电相关属性
@@ -234,19 +236,24 @@ class AGV(Vehicle):
         finally:
             self.action = None
     
+    def get_point_operations(self, point: str) -> Optional[Dict]:
+        """Get the allowed operations and device info for a specific path point."""
+        ops = self.agv_operations.get(point)
+        if not self.agv_operations:
+            print(f"DEBUG: {self.id} has no agv_operations configured")
+        elif point not in self.agv_operations:
+            print(f"DEBUG: {self.id} has no operations defined for point {point}")
+            print(f"DEBUG: Available points: {list(self.agv_operations.keys())}")
+        return ops
+    
     def load_from(self, device:Device, buffer_type=None, product_id: Optional[str] = None):
         """AGV从指定设备/缓冲区取货，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)
         
-        注意：product_id 参数已废弃，只能取第一个产品（FIFO）
+        注意：product_id 参数在warehouse以外设备已废弃，只能取第一个产品（FIFO）
         """
         if not self.can_operate() or self.is_payload_full():
             msg = f"Can not load. AGV {self.id} is not available or payload is full."
             logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
-            return False, msg, None
-        
-        if self.current_point not in device.interacting_points:
-            msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot load. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
-            logger.error(msg)
             return False, msg, None
         
         # check battery level
@@ -364,11 +371,24 @@ class AGV(Vehicle):
             msg = f"Can not unload. {device.id} is full."
             logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
             return False, msg, None
+
         
-        if self.current_point not in device.interacting_points:
-            msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot unload. Not at a valid interacting point for {device.id}. Current: {self.current_point}, Valid: {device.interacting_points}"
-            logger.error(msg)
-            return False, msg, None
+        # Validate operation against AGV operations mapping
+        point_ops = self.get_point_operations(self.current_point)
+        if point_ops:
+            # Check if device matches
+            if point_ops.get('device') != device.id:
+                msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot unload to {device.id} at {self.current_point}. Expected device: {point_ops.get('device')}"
+                logger.error(msg)
+                return False, msg, None
+            # Check if unload operation is allowed
+            if 'unload' not in point_ops.get('operations', []):
+                msg = f"[{self.env.now:.2f}] ❌ {self.id}: Unload operation not allowed at {self.current_point}"
+                logger.error(msg)
+                return False, msg, None
+            # Use buffer from mapping if not specified
+            if buffer_type is None and 'buffer' in point_ops:
+                buffer_type = point_ops['buffer']
 
         # 检查电量
         if self.is_battery_low():
