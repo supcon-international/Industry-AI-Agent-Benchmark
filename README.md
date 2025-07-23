@@ -1,5 +1,6 @@
 # SUPCON NLDF (Natual Language Driven Factory) Simulator
 
+
 ## Quick Start
 
 ### 1. Environment Setup
@@ -25,7 +26,7 @@ uv sync
 
 ### 2. Run Simulation
 
-设置环境变量`TOPIC_ROOT`作为仿真系统mqtt的client id和topic root来分隔不同选手，默认值获取顺序为`TOPIC_ROOT`, `USERNAME`, `USER`的环境变量，否则默认"NLDF_TEST"
+设置环境变量`TOPIC_ROOT`作为仿真系统 mqtt 的 client id 和 topic root 来分隔不同选手，默认值获取顺序为`TOPIC_ROOT`, `USERNAME`, `USER`的环境变量，否则默认"NLDF_TEST"
 
 - add `--menu` arg to enable interactive input thread for test only
 - add `--no-mqtt` arg to disable mqtt communication for debug offline
@@ -33,21 +34,21 @@ uv sync
 ```bash
 uv run run_multi_line_simulation.py (--menu) (--no-mqtt)
 ```
+
 ### 3. Unity Run
 
-1. 设置 `StreamingAssets/MQTTBroker.json`中的Root_Topic_Head字段与上述的topic root一致，并修改wss.client_id字段防止client冲突。
-2. 使用VScode Live Server 插件，选中到index.html文件后go live初始化给予WebGL的Unity前端界面
+1. 设置 `StreamingAssets/MQTTBroker.json`中的 Root_Topic_Head 字段与上述的 topic root 一致，并修改 wss.client_id 字段防止 client 冲突。
+2. 使用 VScode Live Server 插件，选中到 index.html 文件后 go live 初始化给予 WebGL 的 Unity 前端界面
 
-    "wss":{
-        "port": 8084,
-        "host": "supos-ce-instance4.supos.app",
-        "client_id": "***NLDF2_mqtt_wss_test***",
-        ......
-    },
+   "wss":{
+   "port": 8084,
+   "host": "supos-ce-instance4.supos.app",
+   "client*id": "\*\*\_NLDF2_mqtt_wss_test*\*\*",
+   ......
+   },
 
-
-    "common_topic":{
-        "Root_Topic_Head": "***NLDF1***"},
+   "common*topic":{
+   "Root_Topic_Head": "\*\*\_NLDF1*\*\*"},
 
 ## Background
 
@@ -57,59 +58,62 @@ Agent 成了每个领域绕不开的革命火种，在工业领域亦是如此�
 
 ## 场景解释
 
-工厂内部包含3条产线，一个原料仓库以及一个最终产品仓库，3条产线配置有一样的A，B，C工站以及一个质检站，AB，BC，CQ三条中间连接的自动传送带和AGV_1，AGV_2两个AGV。选手需要对3条产线的一共6个AGV进行操作（包括移动，装货卸货等），选手需要在有限的时间内操作agv协调生产，同时应对随机故障，获得尽可能高的KPI得分。（KPI 定义见下文）
+工厂内部包含 3 条产线，一个原料仓库以及一个最终产品仓库，3 条产线配置有一样的 A，B，C 工站以及一个质检站，AB，BC，CQ 三条中间连接的自动传送带和 AGV_1，AGV_2 两个 AGV。选手需要对 3 条产线的一共 6 个 AGV 进行操作（包括移动，装货卸货等），选手需要在有限的时间内操作 agv 协调生产，同时应对随机故障，获得尽可能高的 KPI 得分。（KPI 定义见下文）
 
-为了简单起见，每个AGV的可移动路径点都使用P1-P10来表示，他们表示当前AGV路径上的相对可停顿点，如果希望AGV1或2前往某点例如原料仓库，都需要移动到P0点。AGV路径互不干扰，不考虑碰撞等因素，路径上的点ID如图。
+为了简单起见，每个 AGV 的可移动路径点都使用 P1-P10 来表示，他们表示当前 AGV 路径上的相对可停顿点，如果希望 AGV1 或 2 前往某点例如原料仓库，都需要移动到 P0 点。AGV 路径互不干扰，不考虑碰撞等因素，路径上的点 ID 如图。
 ![Factory Agent Logo](/docs/path_point.png)
 
-| point_id | device_id | 备注 |
-| :--- | :--- | :--- |
-| P0 | RawMaterial | 原料仓库 |
-| P1 | StationA | 工站A |
-| P2 | Conveyor_AB | 传送带AB |
-| P3 | StationB | 工站B |
-| P4 | Conveyor_BC | 传送带BC |
-| P5 | StationC | 工站C |
-| P6 | Conveyor_CQ | 传送带CQ |
-| P7 | QualityCheck | 质检站 |
-| P8 | QualityCheck | 质检站 |
-| P9 | Warehouse | 成品仓库 |
+| point_id | device_id    | 备注      |
+| :------- | :----------- | :-------- |
+| P0       | RawMaterial  | 原料仓库  |
+| P1       | StationA     | 工站 A    |
+| P2       | Conveyor_AB  | 传送带 AB |
+| P3       | StationB     | 工站 B    |
+| P4       | Conveyor_BC  | 传送带 BC |
+| P5       | StationC     | 工站 C    |
+| P6       | Conveyor_CQ  | 传送带 CQ |
+| P7       | QualityCheck | 质检站    |
+| P8       | QualityCheck | 质检站    |
+| P9       | Warehouse    | 成品仓库  |
 
 ## 游戏机制
 
-游戏使用simpy实现离散工厂的仿真
+游戏使用 simpy 实现离散工厂的仿真
 
-1. Order Generactor: 游戏有一个全局的订单生成器，每个订单中可能有一个或多个产品等待加工，一旦生成对应待加工的product会在原料仓库中出现
-2. 产品说明： 游戏定义P1，P2，P3三种产品，产品id:prod_1_XXXXXX中包含3部分prod,type数字和UUID，产品有自己对应的工艺流程：
+1. Order Generactor: 游戏有一个全局的订单生成器，每个订单中可能有一个或多个产品等待加工，一旦生成对应待加工的 product 会在原料仓库中出现
+2. 产品说明： 游戏定义 P1，P2，P3 三种产品，产品 id:prod_1_XXXXXX 中包含 3 部分 prod,type 数字和 UUID，产品有自己对应的工艺流程：
+
 - 产品 P1 / P2
+
 ```
 RawMaterial → [AGV] → StationA → Conveyor_AB → StationB → Conveyor_BC → StationC → Conveyor_CQ → QualityCheck → [AGV] → Warehouse
 ```
 
 - 产品 P3
+
 ```
 RawMaterial → [AGV] → StationA → Conveyor_AB → StationB → Conveyor_BC → StationC → Conveyor_CQ[upper/lower buffer] → [AGV] → StationB → Conveyor_BC → StationC → Conveyor_CQ → QualityCheck → [AGV] → Warehousse
 ```
-3. AGV动作操控时会消耗电量，在移动前检查如果当前电量不足以完成动作，AGV会自动返回充电站充电。
+
+3. AGV 动作操控时会消耗电量，在移动前检查如果当前电量不足以完成动作，AGV 会自动返回充电站充电。
 4. KPI 指标
 
-| 类别 | 指标 | 计算公式 |
-|:---|:---|:---|
-| **生产效率** | 订单完成率 | `按时完成订单数 / 总订单数 × 100%` |
-| | 生产周期效率 | `实际生产时间 / 理论生产时间`（含完成率权重） |
-| | 设备利用率 | `设备工作时间 / 总时间 × 100%` |
-| **质量成本** | 一次通过率 | `一次通过质检数 / 总产品数 × 100%` |
-| | 生产成本 | `Σ(物料+能源+维修+报废成本)` |
-| **AGV效率** | 充电策略 | `主动充电次数 / 总充电次数 × 100%` |
-| | 能源效率 | `完成任务数 / 总充电时间` |
-| | AGV利用率 | `运输时间 / (总时间-故障-充电) × 100%` |
+| 类别         | 指标         | 计算公式                                      |
+| :----------- | :----------- | :-------------------------------------------- |
+| **生产效率** | 订单完成率   | `按时完成订单数 / 总订单数 × 100%`            |
+|              | 生产周期效率 | `实际生产时间 / 理论生产时间`（含完成率权重） |
+|              | 设备利用率   | `设备工作时间 / 总时间 × 100%`                |
+| **质量成本** | 一次通过率   | `一次通过质检数 / 总产品数 × 100%`            |
+|              | 生产成本     | `Σ(物料+能源+维修+报废成本)`                  |
+| **AGV 效率** | 充电策略     | `主动充电次数 / 总充电次数 × 100%`            |
+|              | 能源效率     | `完成任务数 / 总充电时间`                     |
+|              | AGV 利用率   | `运输时间 / (总时间-故障-充电) × 100%`        |
 
-5. 竞赛评分系统（100分制）
+5. 竞赛评分系统（100 分制）
 
-- **生产效率**（40分）：订单完成率 16分 + 周期效率 16分 + 设备利用率 8分
-- **质量成本**（30分）：一次通过率 12分 + 成本控制 18分  
-- **AGV效率**（30分）：充电策略 9分 + 能效比 12分 + 利用率 9分
- 
+- **生产效率**（40 分）：订单完成率 16 分 + 周期效率 16 分 + 设备利用率 8 分
+- **质量成本**（30 分）：一次通过率 12 分 + 成本控制 18 分
+- **AGV 效率**（30 分）：充电策略 9 分 + 能效比 12 分 + 利用率 9 分
 
 ## 3. 功能与架构
 
@@ -131,24 +135,26 @@ sequenceDiagram
 ```
 
 ### 3.2 MQTT 通信层
+
 ---
 
 #### Topic 架构 (`NLDF_DEFAULT` will be replaced by use environment variable `TOPIC_ROOT`)
 
-| Topic | Agent权限 | 描述 | 消息格式 (Payload) |
-| :--- | :--- | :--- | :--- |
-| `NLDF_DEFAULT/{line_id}/station/{id}/status` | **Subscribe** | 订阅所有工站的状态 | JSON (结构化) |
-| `NLDF_DEFAULT/{line_id}/agv/{id}/status`| **Subscribe** | 订阅所有AGV的状态 | JSON (结构化) |
-| `NLDF_DEFAULT/{line_id}/conveyor/{id}/status`| **Subscribe** | 订阅所有传送带的状态 | JSON (结构化) |
-| `NLDF_DEFAULT/warehouse/{id}/status`| **Subscribe** | 订阅所有仓库的状态 | JSON (结构化) |
-| :--- | :--- | :--- | :--- |
-| `NLDF_DEFAULT/{line_id}/alerts`| **Subscribe** | 订阅所有设备故障警报 | JSON (结构化) |
-| `NLDF_DEFAULT/orders/status` | **Subscribe** | 接收新订单信息 | JSON (结构化) |
-| `NLDF_DEFAULT/kpi/status` | **Subscribe** | 订阅KPI更新 | JSON (结构化) |
-| `NLDF_DEFAULT/result/status` | **Subscribe** | 订阅结果更新 | JSON (结构化) |
-| :--- | :--- | :--- | :--- |
-| `NLDF_DEFAULT/command/{line_id}`| **Publish**| 发布选手Agent生成的结构化指令 | JSON (结构见下文) |
-| `NLDF_DEFAULT/response/{line_id}`| **Subscribe** | 接收选手Agent的响应 | JSON（结构见下文） |
+| Topic                                         | Agent 权限    | 描述                            | 消息格式 (Payload) |
+| :-------------------------------------------- | :------------ | :------------------------------ | :----------------- |
+| `NLDF_DEFAULT/{line_id}/station/{id}/status`  | **Subscribe** | 订阅所有工站的状态              | JSON (结构化)      |
+| `NLDF_DEFAULT/{line_id}/agv/{id}/status`      | **Subscribe** | 订阅所有 AGV 的状态             | JSON (结构化)      |
+| `NLDF_DEFAULT/{line_id}/conveyor/{id}/status` | **Subscribe** | 订阅所有传送带的状态            | JSON (结构化)      |
+| `NLDF_DEFAULT/warehouse/{id}/status`          | **Subscribe** | 订阅所有仓库的状态              | JSON (结构化)      |
+| :---                                          | :---          | :---                            | :---               |
+| `NLDF_DEFAULT/{line_id}/alerts`               | **Subscribe** | 订阅所有设备故障警报            | JSON (结构化)      |
+| `NLDF_DEFAULT/orders/status`                  | **Subscribe** | 接收新订单信息                  | JSON (结构化)      |
+| `NLDF_DEFAULT/kpi/status`                     | **Subscribe** | 订阅 KPI 更新                   | JSON (结构化)      |
+| `NLDF_DEFAULT/result/status`                  | **Subscribe** | 订阅结果更新                    | JSON (结构化)      |
+| :---                                          | :---          | :---                            | :---               |
+| `NLDF_DEFAULT/command/{line_id}`              | **Publish**   | 发布选手 Agent 生成的结构化指令 | JSON (结构见下文)  |
+| `NLDF_DEFAULT/response/{line_id}`             | **Subscribe** | 接收选手 Agent 的响应           | JSON（结构见下文） |
+
 ---
 
 选手发往 `NLDF_DEFAULT/command/{line_id}` 的消息**必须**是以下格式的 JSON 字符串：
@@ -170,18 +176,37 @@ sequenceDiagram
 {
   "timestamp": "float (仿真时间戳)",
   "command_id": "str (来自于选手的command_id)",
-  "response": "str (反馈信息)",
+  "response": "str (反馈信息)"
 }
 ```
 
- 支持的指令 `action` 和所需 `params`，command_id is optional, can be ignored.
+支持的指令 `action` 和所需 `params`，command_id is optional, can be ignored.
 
-| Action   | 描述                          | Target |  示例                       |
-| :------- | :---------------------------- | :----- | :---------------------------------- |
-| `move`   | 命令 AGV 移动到指定路径点     | AGV ID | `{'command_id': 'move_688777', 'action': 'move', 'target': 'AGV_1', 'params': {'target_point': 'P1'}}`          |
-| `charge` | 命令 AGV 主动充电             | AGV ID | `{'command_id': 'charge_688777', 'action': 'charge', 'target': 'AGV_1', 'params': {'target_level': 70.0}}`(default: 80.0)                                |
-| `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{'command_id': 'unload_688777', 'action': 'unload', 'target': 'AGV_2', 'params': {}}`|
-| `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{'command_id': 'load_688777', 'action': 'load', 'target': 'AGV_1', 'params': {'product_id': 'prod_1_1ee7ce46'}}`(Product ID only can be used in RawMaterial, else will be ignored) |
-| 全局action| topic中的line_id和payload中的target字段内容可以忽略，仅为过schema格式审核 | 全局 |:--- |
-| `get_result` | 获取当前整个工厂的KPI结果 | any | `{'command_id': 'get_result_688777', 'action': 'get_result', 'target': my factoty', 'params': {}}` |
+| Action       | 描述                                                                               | Target | 示例                                                                                                                                                                                |
+| :----------- | :--------------------------------------------------------------------------------- | :----- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `move`       | 命令 AGV 移动到指定路径点                                                          | AGV ID | `{'command_id': 'move_688777', 'action': 'move', 'target': 'AGV_1', 'params': {'target_point': 'P1'}}`                                                                              |
+| `charge`     | 命令 AGV 主动充电                                                                  | AGV ID | `{'command_id': 'charge_688777', 'action': 'charge', 'target': 'AGV_1', 'params': {'target_level': 70.0}}`(default: 80.0)                                                           |
+| `unload`     | 命令 AGV 卸载产品到指定工站                                                        | AGV ID | `{'command_id': 'unload_688777', 'action': 'unload', 'target': 'AGV_2', 'params': {}}`                                                                                              |
+| `load`       | 命令 AGV 从指定工站装载产品                                                        | AGV ID | `{'command_id': 'load_688777', 'action': 'load', 'target': 'AGV_1', 'params': {'product_id': 'prod_1_1ee7ce46'}}`(Product ID only can be used in RawMaterial, else will be ignored) |
+| 全局 action  | topic 中的 line_id 和 payload 中的 target 字段内容可以忽略，仅为过 schema 格式审核 | 全局   | :---                                                                                                                                                                                |
+| `get_result` | 获取当前整个工厂的 KPI 结果                                                        | any    | `{'command_id': 'get_result_688777', 'action': 'get_result', 'target': my factoty', 'params': {}}`                                                                                  |
+
 ---
+
+## 4.评价维度
+
+除了 ADVX 的统一维度外。我们将从四个维度评价你的项目，每个维度的比重相同。
+
+1. KPI 得分
+   这是最简单客观的评价标准，通过你搭建 Agent 尽可能提升我们预定义的 KPI 指标。
+   //如果你修改了虚拟工厂，我们将视你的改动造成的影响评价 KPI 得分。
+
+2. LLM Agent 水平
+   想必你会使用或建立一个框架，让 LLM 有序的通过 MQTT+Json 与这个虚拟工厂交互，这个交互机制的水平将直接决定 Agent 的聪明程度，我们会分析你对上下文、状态管理、错误处理等关键机制的处理，一个足够优雅的 Agent Engineering 会得到加分。
+
+3. 改进虚拟工厂
+   虚拟工厂本质是一个 Simpy 项目，我们将一个真实世界的排程（Advanced Scheduling）问题简化，植入其中。如果你能发现这个工厂自身存在问题或不合理之处，你可以直接修改、添加其运行机制，让它更贴近真实工厂。当然这需要你快速理解 simpy 与离散事件仿真（DES）的基本原理。
+   //若你在我们提供的虚拟工厂上做了任何改变，务必在你的项目 Readme 中显著注明。
+
+4. 使用 supOS-CE 开源框架 "[supOS 选手使用文档](https://tcn4kjbz6tn7.feishu.cn/wiki/DrO8w0MqbiGPKGkD9vYcblRrnBg)"
+   如果你想办法成功部署了 supOS-CE，并使用了其自带的 MQTT Broker 作为虚拟工厂和 Agent 的通讯接口，将获得加分。如果你更深度的在你的项目中使用了 supOS-CE（NodeRED、Portainer 等组件），或发现了它的问题或 Bug，将获得加分。

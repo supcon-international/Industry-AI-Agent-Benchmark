@@ -9,7 +9,4 @@ wheels/
 # Virtual environments
 .venv
 
-.cursorrules
-.claude
-CLAUDE.md
-docs/notes.md
+test/
