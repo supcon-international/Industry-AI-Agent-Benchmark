@@ -33,6 +33,21 @@ uv sync
 ```bash
 uv run run_multi_line_simulation.py (--menu) (--no-mqtt)
 ```
+### 3. Unity Run
+
+1. 设置 `StreamingAssets/MQTTBroker.json`中的Root_Topic_Head字段与上述的topic root一致，并修改wss.client_id字段防止client冲突。
+2. 使用VScode Live Server 插件，选中到index.html文件后go live初始化给予WebGL的Unity前端界面
+
+    "wss":{
+        "port": 8084,
+        "host": "supos-ce-instance4.supos.app",
+        "client_id": "***NLDF2_mqtt_wss_test***",
+        ......
+    },
+
+
+    "common_topic":{
+        "Root_Topic_Head": "***NLDF1***"},
 
 ## Background
 
@@ -125,7 +140,7 @@ sequenceDiagram
 | `NLDF_DEFAULT/{line_id}/station/{id}/status` | **Subscribe** | 订阅所有工站的状态 | JSON (结构化) |
 | `NLDF_DEFAULT/{line_id}/agv/{id}/status`| **Subscribe** | 订阅所有AGV的状态 | JSON (结构化) |
 | `NLDF_DEFAULT/{line_id}/conveyor/{id}/status`| **Subscribe** | 订阅所有传送带的状态 | JSON (结构化) |
-| `NLDF_DEFAULT/{line_id}/warehouse/{id}/status`| **Subscribe** | 订阅所有仓库的状态 | JSON (结构化) |
+| `NLDF_DEFAULT/warehouse/{id}/status`| **Subscribe** | 订阅所有仓库的状态 | JSON (结构化) |
 | :--- | :--- | :--- | :--- |
 | `NLDF_DEFAULT/{line_id}/alerts`| **Subscribe** | 订阅所有设备故障警报 | JSON (结构化) |
 | `NLDF_DEFAULT/orders/status` | **Subscribe** | 接收新订单信息 | JSON (结构化) |
@@ -133,10 +148,10 @@ sequenceDiagram
 | `NLDF_DEFAULT/result/status` | **Subscribe** | 订阅结果更新 | JSON (结构化) |
 | :--- | :--- | :--- | :--- |
 | `NLDF_DEFAULT/command/{line_id}`| **Publish**| 发布选手Agent生成的结构化指令 | JSON (结构见下文) |
-| `NLDF_DEFAULT/response/{line_id}`| **Subscribe** | 接收选手Agent的响应 | JSON (结构见下文) |
+| `NLDF_DEFAULT/response/{line_id}`| **Subscribe** | 接收选手Agent的响应 | JSON（结构见下文） |
 ---
 
-选手发往 `agent/commands` 的消息**必须**是以下格式的 JSON 字符串：
+选手发往 `NLDF_DEFAULT/command/{line_id}` 的消息**必须**是以下格式的 JSON 字符串：
 
 ```json
 {
@@ -159,13 +174,14 @@ sequenceDiagram
 }
 ```
 
- 支持的指令 `action` 和所需 `params`
+ 支持的指令 `action` 和所需 `params`，command_id is optional, can be ignored.
 
-| Action   | 描述                          | Target | `params` 示例                       |
+| Action   | 描述                          | Target |  示例                       |
 | :------- | :---------------------------- | :----- | :---------------------------------- |
-| `move`   | 命令 AGV 移动到指定路径点     | AGV ID | `{"target_point": "P9"}`          |
-| `charge` | 命令 AGV 主动充电             | AGV ID | `{"target_level": 80.0}`(default: 80.0)                                |
-| `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{}` |
-| `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{"product_id": "Prod_1_XXXXXXX"}`(only can be used in RawMaterial, else will be ignored) |
-| `get_result` | 获取当前工厂的KPI结果 | Any | `{}` |
+| `move`   | 命令 AGV 移动到指定路径点     | AGV ID | `{'command_id': 'move_688777', 'action': 'move', 'target': 'AGV_1', 'params': {'target_point': 'P1'}}`          |
+| `charge` | 命令 AGV 主动充电             | AGV ID | `{'command_id': 'charge_688777', 'action': 'charge', 'target': 'AGV_1', 'params': {'target_level': 70.0}}`(default: 80.0)                                |
+| `unload` | 命令 AGV 卸载产品到指定工站   | AGV ID | `{'command_id': 'unload_688777', 'action': 'unload', 'target': 'AGV_2', 'params': {}}`|
+| `load`   | 命令 AGV 从指定工站装载产品   | AGV ID | `{'command_id': 'load_688777', 'action': 'load', 'target': 'AGV_1', 'params': {'product_id': 'prod_1_1ee7ce46'}}`(Product ID only can be used in RawMaterial, else will be ignored) |
+| 全局action| topic中的line_id和payload中的target字段内容可以忽略，仅为过schema格式审核 | 全局 |:--- |
+| `get_result` | 获取当前整个工厂的KPI结果 | any | `{'command_id': 'get_result_688777', 'action': 'get_result', 'target': my factoty', 'params': {}}` |
 ---
