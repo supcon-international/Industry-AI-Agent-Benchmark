@@ -1,6 +1,5 @@
 # SUPCON NLDF (Natual Language Driven Factory) Simulator
 
-
 ## Quick Start
 
 ### 1. Environment Setup
@@ -136,8 +135,6 @@ sequenceDiagram
 
 ### 3.2 MQTT 通信层
 
----
-
 #### Topic 架构 (`NLDF_DEFAULT` will be replaced by use environment variable `TOPIC_ROOT`)
 
 | Topic                                         | Agent 权限    | 描述                            | 消息格式 (Payload) |
@@ -154,8 +151,6 @@ sequenceDiagram
 | :---                                          | :---          | :---                            | :---               |
 | `NLDF_DEFAULT/command/{line_id}`              | **Publish**   | 发布选手 Agent 生成的结构化指令 | JSON (结构见下文)  |
 | `NLDF_DEFAULT/response/{line_id}`             | **Subscribe** | 接收选手 Agent 的响应           | JSON（结构见下文） |
-
----
 
 选手发往 `NLDF_DEFAULT/command/{line_id}` 的消息**必须**是以下格式的 JSON 字符串：
 
@@ -191,22 +186,28 @@ sequenceDiagram
 | 全局 action  | topic 中的 line_id 和 payload 中的 target 字段内容可以忽略，仅为过 schema 格式审核 | 全局   | :---                                                                                                                                                                                |
 | `get_result` | 获取当前整个工厂的 KPI 结果                                                        | any    | `{'command_id': 'get_result_688777', 'action': 'get_result', 'target': my factoty', 'params': {}}`                                                                                  |
 
----
-
 ## 4.评价维度
 
-除了 ADVX 的统一维度外。我们将从四个维度评价你的项目，每个维度的比重相同。
+除了 ADVX 的统一评价维度外，我们将从以下四个方面对你的项目进行等权重评价：
 
-1. KPI 得分
-   这是最简单客观的评价标准，通过你搭建 Agent 尽可能提升我们预定义的 KPI 指标。
-   //如果你修改了虚拟工厂，我们将视你的改动造成的影响评价 KPI 得分。
+1. **KPI 得分**  
+   - 这是最直接且客观的评价标准。我们将根据你搭建的 Agent 在预定义 KPI 指标上的表现进行评分。  
+   - *注意：如果你对虚拟工厂进行了修改，我们会综合考虑这些改动对 KPI 得分的影响。*
 
-2. LLM Agent 水平
-   想必你会使用或建立一个框架，让 LLM 有序的通过 MQTT+Json 与这个虚拟工厂交互，这个交互机制的水平将直接决定 Agent 的聪明程度，我们会分析你对上下文、状态管理、错误处理等关键机制的处理，一个足够优雅的 Agent Engineering 会得到加分。
+2. **LLM Agent 工程能力**  
+   - 你需要设计或使用一个框架，使 LLM 能够通过 MQTT + JSON 与虚拟工厂高效交互。  
+   - 我们将重点考察你在上下文管理、状态管理、错误处理等关键机制上的实现。  
+   - 优雅、健壮的 Agent 工程设计将获得额外加分。
 
-3. 改进虚拟工厂
-   虚拟工厂本质是一个 Simpy 项目，我们将一个真实世界的排程（Advanced Scheduling）问题简化，植入其中。如果你能发现这个工厂自身存在问题或不合理之处，你可以直接修改、添加其运行机制，让它更贴近真实工厂。当然这需要你快速理解 simpy 与离散事件仿真（DES）的基本原理。
-   //若你在我们提供的虚拟工厂上做了任何改变，务必在你的项目 Readme 中显著注明。
+3. **虚拟工厂的改进**  
+   - 虚拟工厂基于 Simpy 实现，模拟了真实世界的高级排程（Advanced Scheduling）问题。  
+   - 如果你发现工厂存在不合理之处，可以直接修改或扩展其运行机制，使其更贴近真实工厂。  
+   - *如对虚拟工厂有任何修改，请务必在项目 README 中显著注明。*
 
-4. 使用 supOS-CE 开源框架 "[supOS 选手使用文档](https://tcn4kjbz6tn7.feishu.cn/wiki/DrO8w0MqbiGPKGkD9vYcblRrnBg)"
-   如果你想办法成功部署了 supOS-CE，并使用了其自带的 MQTT Broker 作为虚拟工厂和 Agent 的通讯接口，将获得加分。如果你更深度的在你的项目中使用了 supOS-CE（NodeRED、Portainer 等组件），或发现了它的问题或 Bug，将获得加分。
+4. **supOS-CE 开源框架的应用**  
+   - 成功部署 supOS-CE，并使用其自带的 MQTT Broker 作为虚拟工厂与 Agent 的通信接口，将获得加分。  
+   - 如果你进一步集成了 supOS-CE 的其他组件（如 NodeRED、Portainer 等），或发现并反馈了其问题/bug，也会获得额外加分。
+
+    -  > [supOS 选手使用文档](https://tcn4kjbz6tn7.feishu.cn/wiki/DrO8w0MqbiGPKGkD9vYcblRrnBg)
+
+---
