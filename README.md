@@ -13,7 +13,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 - Clone project
 
 ```bash
-git clone https://github.com/SUPCON-AdventureX/25-SUPCON-AdventureX-Hackthon.git
+git clone https://github.com/supcon-international/25-SUPCON-AdventureX-Hackthon.git
 cd 25-SUPCON-AdventureX-Hackthon
 ```
 
