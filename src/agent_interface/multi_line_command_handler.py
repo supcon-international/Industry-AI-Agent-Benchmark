@@ -2,7 +2,7 @@
 import json
 import logging
 from typing import Dict, Any, Optional
-
+import time
 from config.schemas import AgentCommand, SystemResponse
 from src.utils.mqtt_client import MQTTClient
 from src.utils.topic_manager import TopicManager
@@ -25,11 +25,22 @@ class MultiLineCommandHandler:
         self.factory = factory
         self.mqtt_client = mqtt_client
         self.topic_manager = topic_manager
-        
+
+        ping_topic = self.topic_manager.get_heartbeat_topic(ping=True)
+        self.mqtt_client.subscribe(ping_topic, self._handle_heartbeat)
+        logger.info(f"MultiLineCommandHandler initialized and subscribed to {ping_topic}")
+
         # Subscribe to a wildcard topic for all lines
         command_topic = self.topic_manager.get_agent_command_topic_wildcard()
         self.mqtt_client.subscribe(command_topic, self._handle_command_message)
         logger.info(f"MultiLineCommandHandler initialized and subscribed to {command_topic}")
+    
+    def _handle_heartbeat(self, topic: str, payload: bytes):
+        if payload.decode() == "ping":
+            logger.debug(f"🔔 Heartbeat ping from {topic}, sending pong")
+            self.mqtt_client.publish(self.topic_manager.get_heartbeat_topic(ping=False), "pong")
+        else:
+            logger.warning(f"Received unexpected heartbeat payload: {payload.decode()}")
 
     def _handle_command_message(self, topic: str, payload: bytes):
         """

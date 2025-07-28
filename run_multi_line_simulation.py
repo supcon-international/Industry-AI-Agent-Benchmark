@@ -18,6 +18,7 @@ from src.agent_interface.multi_line_command_handler import MultiLineCommandHandl
 from src.user_input_multi import menu_input_thread
 from typing import Optional
 import time
+from src.utils.topic_manager import TopicManager
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -33,6 +34,7 @@ class MultiLineFactorySimulation:
     def __init__(self):
         self.factory: Optional[Factory] = None
         self.mqtt_client: Optional[MQTTClient] = None
+        self.topic_manager: Optional[TopicManager] = None
         self.command_handler: Optional[MultiLineCommandHandler] = None
         self.running = False
 
@@ -46,7 +48,8 @@ class MultiLineFactorySimulation:
             or os.getenv("USER")
             or "NLDF_TEST"
         )
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, client_name)
+        self.topic_manager = TopicManager(client_name)
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, self.topic_manager, client_name)
         
         # Connect to MQTT
         logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, client_name: {client_name}")
@@ -73,7 +76,7 @@ class MultiLineFactorySimulation:
             print(f"❌ Failed to load multi-line factory configuration: {e}")
             raise e
         
-        self.factory = Factory(layout_config, self.mqtt_client, no_faults=no_faults) # no_faults for cleaner testing
+        self.factory = Factory(layout_config, self.mqtt_client, self.topic_manager, no_faults=no_faults) # no_faults for cleaner testing
         logger.info(f"✅ Factory created with {len(self.factory.lines)} lines")
         
         # Create command handler (this will start listening for commands)

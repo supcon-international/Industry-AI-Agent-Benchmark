@@ -1,8 +1,12 @@
 # utils/mqtt_client.py
 import logging
+import threading
 import paho.mqtt.client as mqtt
 from typing import Callable, Optional
 from pydantic import BaseModel
+import time
+import os
+from src.utils.topic_manager import TopicManager
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -13,22 +17,61 @@ class MQTTClient:
     methods for connecting, publishing, and subscribing.
     """
 
-    def __init__(self, host: str, port: int, client_id: str = ""):
+    def __init__(self, host: str, port: int, topic_manager: TopicManager, client_id: str = ""):
         self._host = host
         self._port = port
         # NOTE: The client_id is passed as the first argument for compatibility.
         self._client = mqtt.Client(client_id=client_id)
-            
+        self._topic_manager = topic_manager
+        
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
         self._message_callbacks = {}
 
+        self.heartbeat_interval = 20  # 心跳间隔（秒）
+        self.heartbeat_timeout = 60   # 心跳超时（秒）
+        self.last_pong_time: Optional[float] = None
+        self.heartbeat_thread: Optional[threading.Thread] = None
+        self.alert_callback = None  # 告警回调函数
+
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
             logger.info(f"Successfully connected to MQTT Broker at {self._host}:{self._port}")
+            if self._topic_manager:
+                pong_topic = self._topic_manager.get_heartbeat_topic(ping=False)
+                self._client.subscribe(pong_topic)
+            self._start_heartbeat()
         else:
             logger.error(f"Failed to connect to MQTT Broker, reason code: {reason_code}")
+
+    def _start_heartbeat(self):
+        def heartbeat_loop():
+            while True:
+                time.sleep(self.heartbeat_interval)
+                if self._topic_manager:
+                    ping_topic = self._topic_manager.get_heartbeat_topic(ping=True)
+                    self.publish(ping_topic, "ping")
+                
+                    # 检查超时
+                    if self.last_pong_time and (time.time() - self.last_pong_time > self.heartbeat_timeout):
+                        logger.warning("❌ Heartbeat timeout! Broker may be down.")
+                        if self.alert_callback:
+                            self.alert_callback("MQTT Broker heartbeat timeout")
+                        self._client.reconnect()  # 触发重连
+                else:
+                    logger.warning("Topic manager not set, cannot send heartbeat.")
+
+        if self.heartbeat_thread is None:
+            self.last_pong_time = time.time()  # Initialize pong time
+            self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+            self.heartbeat_thread.start()
+            logger.info("Heartbeat thread started.")
+
+    def set_alert_callback(self, callback):
+        """设置告警回调函数（如发送邮件/Slack）"""
+        self.alert_callback = callback
+        print(f"🔔 Alert callback set: {callback}")
 
     def _on_disconnect(self, client, userdata, reason_code, properties=None):
         logger.warning(f"Disconnected from MQTT Broker with reason code: {reason_code}. Reconnecting...")
@@ -38,6 +81,11 @@ class MQTTClient:
         Internal callback to route messages to the appropriate topic-specific callback.
         """
         logger.debug(f"Received message on topic {msg.topic}")
+        if self._topic_manager and msg.topic == self._topic_manager.get_heartbeat_topic(ping=False):
+            if msg.payload.decode() == "pong":
+                self.update_last_pong_time()
+                return
+
         # Iterate over subscribed topics and check for a match
         for topic_filter, callback in self._message_callbacks.items():
             if mqtt.topic_matches_sub(topic_filter, msg.topic):
@@ -45,6 +93,9 @@ class MQTTClient:
                 break
         else:
             logger.warning(f"No callback registered for message on topic {msg.topic}")
+
+    def update_last_pong_time(self):
+        self.last_pong_time = time.time()
 
     def connect(self):
         """

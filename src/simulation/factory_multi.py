@@ -14,20 +14,12 @@ class Factory:
     """
     The main class that orchestrates the entire factory simulation with multiple production lines.
     """
-    def __init__(self, layout_config: Dict, mqtt_client: MQTTClient, no_faults: bool = False):
+    def __init__(self, layout_config: Dict, mqtt_client: MQTTClient, topic_manager: TopicManager, no_faults: bool = False):
         self.env = simpy.Environment()
         self.layout = layout_config
         self.mqtt_client = mqtt_client
         self.no_faults_mode = no_faults
-        
-        # Read player name from environment variable
-        topic_root =(
-            os.getenv("TOPIC_ROOT")
-            or os.getenv("USERNAME")
-            or os.getenv("USER")
-            or "NLDF_TEST"
-        )
-        self.topic_manager = TopicManager(topic_root)
+        self.topic_manager = topic_manager
 
         self.lines: Dict[str, Line] = {}
         self.raw_material: RawMaterial

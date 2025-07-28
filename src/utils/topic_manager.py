@@ -79,4 +79,10 @@ class TopicManager:
             return f"{self.root}/response/{line_id}"
         else:
             return f"{self.root}/response/general"
-
+        
+    def get_heartbeat_topic(self, ping: bool = True) -> str:
+        """Generates the heartbeat topic."""
+        if ping:
+            return f"{self.root}/heartbeat/ping"
+        else:
+            return f"{self.root}/heartbeat/pong"
