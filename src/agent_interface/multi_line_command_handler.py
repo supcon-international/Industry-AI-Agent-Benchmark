@@ -6,6 +6,7 @@ import time
 from config.schemas import AgentCommand, SystemResponse
 from src.utils.mqtt_client import MQTTClient
 from src.utils.topic_manager import TopicManager
+from src.simulation.entities.agv import AGV
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +50,20 @@ class MultiLineCommandHandler:
         """
         logger.info(f"Received command message: {topic} -> {payload.decode()}")
         try:
+            if not payload or not payload.strip():
+                logger.warning("Empty payload received, ignoring.")
+                return
+            
             # Parse the topic to extract line_id and device_id
             parsed_topic = self.topic_manager.parse_agent_command_topic(topic)
             if not parsed_topic:
                 logger.error(f"Could not parse command topic: {topic}")
                 return
-
             line_id = parsed_topic['line_id']
-            # device_id is now expected in the command payload's target field
             
             # Parse JSON payload
             command_data = json.loads(payload.decode('utf-8'))
-            
+
             try:
                 # Validate using Pydantic schema
                 command = AgentCommand.model_validate(command_data)
@@ -99,16 +102,26 @@ class MultiLineCommandHandler:
             logger.error(msg)
             self._publish_response(line_id, command_id, msg)
             return
-
+        agv = line.agvs.get(target_device_id)
+        if agv and not agv.can_operate():
+            msg = f"AGV {target_device_id} is not available, cannot {action}."
+            logger.error(msg)
+            self._publish_response(line_id, command_id, msg)
+            return        
+        if agv and agv.is_busy():
+            msg = f"AGV {target_device_id} is currently busy in {agv.status.value}, cannot {action}."
+            logger.error(msg)
+            self._publish_response(line_id, command_id, msg)
+            return
         try:
             if action == "move":
-                self._handle_move_agv(line, target_device_id, params, command_id)
+                self._handle_move_agv(agv, params, command_id)
             elif action == "load":
-                self._handle_load_agv(line, target_device_id, params, command_id)
+                self._handle_load_agv(agv, params, command_id)
             elif action == "unload":
-                self._handle_unload_agv(line, target_device_id, params, command_id)
+                self._handle_unload_agv(agv, params, command_id)
             elif action == "charge":
-                self._handle_charge_agv(line, target_device_id, params, command_id)
+                self._handle_charge_agv(agv, params, command_id)
             elif action == "get_result":
                 self._handle_get_result(line_id, params, command_id)
             else:
@@ -121,101 +134,79 @@ class MultiLineCommandHandler:
             logger.error(msg)
             self._publish_response(line_id, command_id, msg)
 
-    def _handle_move_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
+    def _handle_move_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
         target_point = params.get("target_point")
         if not target_point:
-            self._publish_response(line.name, command_id, "'target_point' missing in move command.")
-            return
-            
-        agv = line.agvs.get(agv_id)
-        if not agv:
-            self._publish_response(line.name, command_id, f"AGV '{agv_id}' not found in line '{line.name}'.")
+            self._publish_response(agv.line_id, command_id, "'target_point' missing in move command.")
             return
             
         def move_process():
             success, message = yield from agv.move_to(target_point)
-            self._publish_response(line.name, command_id, message)
+            self._publish_response(agv.line_id, command_id, message)
         
         self.factory.env.process(move_process())
 
-    def _handle_load_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
+    def _handle_load_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
         
-        if agv_id not in line.agvs:
-            msg = f"AGV {agv_id} not found in this line"
-            logger.error(msg)
-            self._publish_response(line.name, command_id, f"AGV {agv_id} not found in line {line.name}")
-            return
-        agv = line.agvs.get(agv_id)
-
         # Get device and buffer from AGV's position mapping
         point_ops = agv.get_point_operations(agv.current_point)
         if not point_ops or not point_ops.get('device'):
-            msg = f"No device can be operated for {agv_id} at position {agv.current_point}"
+            msg = f"No device can be operated for {agv.id} at position {agv.current_point}"
             logger.error(msg)
-            self._publish_response(line.name, command_id, msg)
+            self._publish_response(agv.line_id, command_id, msg)
             return
         
         device_id = point_ops['device']
         buffer_type = point_ops.get('buffer')  # May be None for some devices
 
-        device = self._find_device(line, device_id)
+        target_line = self.factory.lines.get(agv.line_id)
+        device = self._find_device(target_line, device_id)
         if not device:
-            self._publish_response(line.name, command_id, f"Device '{device_id}' not found in line '{line.name}' or factory.")
+            self._publish_response(agv.line_id, command_id, f"Device '{device_id}' not found in line '{agv.line_id}' or factory.")
             return
 
         def load_process():
             product_id = params.get("product_id", None) if device_id == "RawMaterial" else None
             success, message, _ = yield from agv.load_from(device, buffer_type, product_id)
-            self._publish_response(line.name, command_id, message)
+            self._publish_response(agv.line_id, command_id, message)
             return success, message
         
         self.factory.env.process(load_process())
 
-    def _handle_unload_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
-        
-        if agv_id not in line.agvs:
-            msg = f"AGV {agv_id} not found in this line"
-            logger.error(msg)
-            self._publish_response(line.name, command_id, f"AGV {agv_id} not found in line {line.name}")
-            return
-        agv = line.agvs.get(agv_id)
-
+    def _handle_unload_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
         # Get device and buffer from AGV's position mapping
         point_ops = agv.get_point_operations(agv.current_point)
         if not point_ops or not point_ops.get('device'):
-            msg = f"No device mapping found for AGV {agv_id} at position {agv.current_point}"
+            msg = f"No device mapping found for AGV {agv.id} at position {agv.current_point}"
             logger.error(msg)
-            self._publish_response(line.name, command_id, msg)
+            self._publish_response(agv.line_id, command_id, msg)
             return
         
         device_id = point_ops['device']
         buffer_type = point_ops.get('buffer')  # May be None for some devices
-
-        device = self._find_device(line, device_id)
+        
+        target_line = self.factory.lines.get(agv.line_id)
+        device = self._find_device(target_line, device_id)
         if not device:
-            self._publish_response(line.name, command_id, f"Device {device_id} not found in line {line.name} or factory.")
+            self._publish_response(agv.line_id, command_id, f"Device {device_id} not found in line {agv.line_id} or factory.")
             return
 
         def unload_process():
             success, message, _ = yield from agv.unload_to(device, buffer_type)
-            self._publish_response(line.name, command_id, message)
+            self._publish_response(agv.line_id, command_id, message)
         
         self.factory.env.process(unload_process())
 
-    def _handle_charge_agv(self, line, agv_id: str, params: Dict[str, Any], command_id: Optional[str] = None):
-        agv = line.agvs.get(agv_id)
-        if not agv:
-            self._publish_response(line.name, command_id, f"AGV '{agv_id}' not found in line '{line.name}'.")
-            return
+    def _handle_charge_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
         
         target_level = params.get("target_level")
         if not target_level:
-            self._publish_response(line.name, command_id, "'target_level' missing in charge command, will charge to 80 by default")
+            self._publish_response(agv.line_id, command_id, "'target_level' missing in charge command, will charge to 80 by default")
             target_level = 80.0
 
         def charge_process():
             success, message = yield from agv.voluntary_charge(target_level)
-            self._publish_response(line.name, command_id, message)
+            self._publish_response(agv.line_id, command_id, message)
         
         self.factory.env.process(charge_process())
 

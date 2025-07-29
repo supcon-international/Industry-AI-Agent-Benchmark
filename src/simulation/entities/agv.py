@@ -160,11 +160,6 @@ class AGV(Vehicle):
     def _move_to_process(self, target_point: str):
         """The actual process logic for move_to, to be wrapped by self.action."""
         try:
-            if not self.can_operate():
-                msg = f"Can not move. AGV {self.id} is not available."
-                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
-                return False, msg
-                
             if target_point not in self.path_points:
                 msg = f"Unknown path point {target_point}"
                 logger.error(f"[{self.env.now:.2f}] ❌ {self.id}: {msg}")
@@ -251,8 +246,8 @@ class AGV(Vehicle):
         
         注意：product_id 参数在warehouse以外设备已废弃，只能取第一个产品（FIFO）
         """
-        if not self.can_operate() or self.is_payload_full():
-            msg = f"Can not load. AGV {self.id} is not available or payload is full."
+        if self.is_payload_full():
+            msg = f"Can not load. AGV {self.id} payload is full."
             logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
             return False, msg, None
         
@@ -362,16 +357,10 @@ class AGV(Vehicle):
     def unload_to(self, device, buffer_type=None):
         """AGV将产品卸载到指定设备/缓冲区，支持多种设备类型和buffer_type。返回(成功,反馈信息,产品对象)"""
         # check if agv can operate
-        if not self.can_operate():
-                msg = f"Can not unload. AGV {self.id} is not available."
-                logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
-                return False, msg, None
-        
         if device.is_full():
             msg = f"Can not unload. {device.id} is full."
             logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
             return False, msg, None
-
         
         # Validate operation against AGV operations mapping
         point_ops = self.get_point_operations(self.current_point)
@@ -480,6 +469,11 @@ class AGV(Vehicle):
             msg = f"already charging"
             print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
             return True, msg
+        
+        if self.is_busy():
+            msg = f"AGV {self.id} is currently busy in {self.status.value}."
+            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            return False, msg
             
         if self.battery_level >= target_level:
             msg = f"battery level is enough ({self.battery_level:.1f}%)"

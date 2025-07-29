@@ -62,6 +62,10 @@ class Device:
         # 检查冻结状态
         return self.status not in [DeviceStatus.FAULT, DeviceStatus.MAINTENANCE, DeviceStatus.BLOCKED]
 
+    def is_busy(self) -> bool:
+        """检查设备是否忙碌"""
+        return self.status != DeviceStatus.IDLE
+    
     def get_detailed_status(self) -> DeviceDetailedStatus:
         """获取设备详细状态"""
         return DeviceDetailedStatus(
