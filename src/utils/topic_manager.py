@@ -7,15 +7,15 @@ class TopicManager:
     Manages the generation of all MQTT topics for the simulation.
     It ensures a consistent topic structure based on a root name.
     """
-    def __init__(self, player_name: str):
+    def __init__(self, root_topic: str):
         """
         Initializes the TopicManager with a root topic name.
         Args:
-            player_name: The root name for all topics, typically the player's or team's name.
+            root_topic: The root name for all topics, typically the player's or team's name.
         """
-        if not player_name or not isinstance(player_name, str) or "/" in player_name:
-            raise ValueError("Player name cannot be empty or contain '/'")
-        self.root = player_name
+        if not root_topic or not isinstance(root_topic, str) or "/" in root_topic:
+            raise ValueError("Root topic cannot be empty or contain '/'")
+        self.root = root_topic
         print(f"✅ TopicManager initialized with root topic: '{self.root}'")
 
     def get_station_status_topic(self, line_id: str, device_id: str) -> str:

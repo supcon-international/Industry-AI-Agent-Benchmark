@@ -47,6 +47,7 @@ class MultiLineCommandHandler:
         Callback for incoming MQTT command messages.
         Parses the topic to get line_id and device_id, then validates the payload.
         """
+        logger.info(f"Received command message: {topic} -> {payload.decode()}")
         try:
             # Parse the topic to extract line_id and device_id
             parsed_topic = self.topic_manager.parse_agent_command_topic(topic)

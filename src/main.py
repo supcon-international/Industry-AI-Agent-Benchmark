@@ -22,7 +22,7 @@ from src.utils.config_loader import load_factory_config
 from src.utils.mqtt_client import MQTTClient
 from src.agent_interface.command_handler import CommandHandler
 from src.user_input import menu_input_thread
-from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, LOG_LEVEL
+from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, LOG_LEVEL, FACTORY_LAYOUT_FILE
 from src.game_logic.fault_system import FaultType
 
 # Configure logging
@@ -68,7 +68,7 @@ class FactorySimulation:
             raise ConnectionError("MQTT connection failed.")
 
         # Create the factory with MQTT client
-        self.factory = Factory(load_factory_config(), self.mqtt_client, no_faults=no_faults)
+        self.factory = Factory(load_factory_config(FACTORY_LAYOUT_FILE), self.mqtt_client, no_faults=no_faults)
         logger.info(f"✅ Factory created with {len(self.factory.stations)} stations and {len(self.factory.agvs)} AGVs")
         logger.info("📋 Order generation, fault system, and KPI calculation initialized")
         
@@ -141,7 +141,7 @@ class FactorySimulation:
         
         # Print final scores when shutting down
         if self.factory:
-            self.factory.print_final_scores()
+            self.factory.kpi_calculator.print_final_scores()
         
         if self.mqtt_client:
             self.mqtt_client.disconnect()

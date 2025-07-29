@@ -5,12 +5,6 @@ factory:
   name: "SUPCON AdventureX NLDF"
   description: "自然语言驱动智能制造仿真工厂"
 
-# # 系统性能参数 (Global)
-# system:
-#   status_publish_interval: 10.0  # 状态发布间隔 (秒)
-#   simulation_step_size: 0.1      # 仿真步长 (秒)
-#   max_concurrent_orders: 20      # 最大并发订单数
-
 warehouses:
   - id: "RawMaterial"
     position: [0, 20]

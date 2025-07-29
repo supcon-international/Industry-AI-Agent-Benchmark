@@ -21,7 +21,8 @@ class MQTTClient:
         self._host = host
         self._port = port
         # NOTE: The client_id is passed as the first argument for compatibility.
-        self._client = mqtt.Client(client_id=client_id)
+        self.client_id = client_id
+        self._client = mqtt.Client(client_id=client_id,protocol=mqtt.MQTTv5)
         self._topic_manager = topic_manager
         
         self._client.on_connect = self._on_connect
@@ -109,6 +110,21 @@ class MQTTClient:
             logger.error(f"Error connecting to MQTT Broker: {e}")
             raise
 
+    def connect_with_retry(self):
+        self.connect()
+        # Wait for MQTT client to be fully connected
+        max_retries = 20
+        retry_interval = 0.5
+        for i in range(max_retries):
+            if self.is_connected():
+                logger.info("✅ MQTT client is fully connected.")
+                break
+            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+            time.sleep(retry_interval)
+        else:
+            logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
+            raise ConnectionError("MQTT connection failed.")
+    
     def disconnect(self):
         """
         Stops the network loop and disconnects from the MQTT broker.

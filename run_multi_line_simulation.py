@@ -3,6 +3,7 @@ import os
 import sys
 import argparse
 import threading
+import uuid
 
 # Add the project root to Python path
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -11,7 +12,7 @@ sys.path.insert(0, project_root)
 from src.utils.mqtt_client import MQTTClient
 from src.simulation.factory_multi import Factory
 from src.utils.config_loader import load_factory_config
-from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT
+from config.settings import MQTT_BROKER_HOST, MQTT_BROKER_PORT, FACTORY_LAYOUT_MULTI_FILE
 import logging
 from config.settings import LOG_LEVEL
 from src.agent_interface.multi_line_command_handler import MultiLineCommandHandler
@@ -49,28 +50,16 @@ class MultiLineFactorySimulation:
             or "NLDF_TEST"
         )
         self.topic_manager = TopicManager(client_name)
-        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, self.topic_manager, client_name)
+        self.mqtt_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, self.topic_manager, f"factory_client_{uuid.uuid4().hex[:8]}")
         
         # Connect to MQTT
-        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, client_name: {client_name}")
+        logger.info(f"📡 Connecting to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, client_id: {self.mqtt_client.client_id}")
 
         if not no_mqtt:
-            self.mqtt_client.connect()
-            # Wait for MQTT client to be fully connected
-            max_retries = 20
-            retry_interval = 0.5
-            for i in range(max_retries):
-                if self.mqtt_client.is_connected():
-                    logger.info("✅ MQTT client is fully connected.")
-                    break
-                logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
-                time.sleep(retry_interval)
-            else:
-                logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
-                raise ConnectionError("MQTT connection failed.")
+            self.mqtt_client.connect_with_retry()
 
         try:
-            layout_config = load_factory_config('factory_layout_multi.yml')
+            layout_config = load_factory_config(FACTORY_LAYOUT_MULTI_FILE)
             print(f"✅ Successfully loaded multi-line factory configuration from layout_config")
         except Exception as e:
             print(f"❌ Failed to load multi-line factory configuration: {e}")
@@ -127,9 +116,9 @@ class MultiLineFactorySimulation:
         logger.info("🧹 Shutting down Factory Simulation...")
         self.running = False
         
-        # # Print final scores when shutting down
-        # if self.factory:
-        #     self.factory.print_final_scores()
+        # Print final scores when shutting down
+        if self.factory:
+            self.factory.kpi_calculator.print_final_scores()
         
         if self.mqtt_client:
             self.mqtt_client.disconnect()
@@ -160,6 +149,9 @@ def run_simulation_multi():
     simulation.initialize(no_faults=args.no_fault, no_mqtt=args.no_mqtt)
     
     if args.menu and simulation.factory and simulation.factory.topic_manager:
+        # input_client = MQTTClient(MQTT_BROKER_HOST, MQTT_BROKER_PORT, simulation.factory.topic_manager, f"input_client_{uuid.uuid4().hex[:8]}")
+        # input_client.connect_with_retry()
+        # logger.info(f"📡 Input client connected to MQTT broker at {MQTT_BROKER_HOST}:{MQTT_BROKER_PORT}, client_id: {input_client.client_id}")
         threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory, simulation.factory.topic_manager), daemon=True).start()
         logger.info("Interactive menu enabled. Type commands in the console.")
 

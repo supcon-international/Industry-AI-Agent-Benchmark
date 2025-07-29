@@ -362,30 +362,6 @@ class Factory:
         # print(f"--- Active processes: Order Gen, Fault Injection, KPI Updates, MQTT Publishing ---")
         self.env.run(until=until)
         # print("--- Factory simulation finished ---")
-
-    def print_final_scores(self):
-        """Print final competition scores. Should be called only when simulation truly ends."""
-        if self.kpi_calculator:
-            final_scores = self.kpi_calculator.get_final_score()
-            print(f"\n{'='*60}")
-            print("🏆 最终竞赛得分")
-            print(f"{'='*60}")
-            print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
-            print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
-            print(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
-            print(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
-            print(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
-            print(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
-            print(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
-            print(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
-            print(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
-            print(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
-            print(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
-            print(f"\n总得分: {final_scores['total_score']:.2f}")
-            print(f"{'='*60}\n")
-            
-            # Force a final KPI update with final scores
-            self.kpi_calculator.force_kpi_update()
     
     def get_final_scores(self) -> Optional[Dict]:
         """Get final competition scores from KPI calculator."""
