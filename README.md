@@ -1,5 +1,9 @@
 # SUPCON NLDF (Natual Language Driven Factory) Simulator
 
+<p align="center">
+  <img src="docs/NLDF-demo.gif" alt="NLDF Demo"/>
+</p>
+
 ## Quick Start
 
 ### 1. Environment Setup
@@ -25,13 +29,14 @@ uv sync
 
 ### 2. Run Simulation
 
-设置环境变量`TOPIC_ROOT`作为仿真系统 mqtt 的 client id 和 topic root 来分隔不同选手，默认值获取顺序为`TOPIC_ROOT`, `USERNAME`, `USER`的环境变量，否则默认"NLDF_TEST"
+设置环境变量`TOPIC_ROOT`作为仿真系统 mqtt 的 client id 和 topic root 来分隔不同选手，默认值获取顺序为`TOPIC_ROOT`, `USERNAME`, `USER`的环境变量，否则默认"NLDF_Default"
 
-- add `--menu` arg to enable interactive input thread for test only
+- add `-m` or `--menu` arg to enable interactive input thread for test only
+- add `-v` or `--verbose` arg to enable verbose logging for debug level (otherwise: INFO)
 - add `--no-mqtt` arg to disable mqtt communication for debug offline
 
 ```bash
-uv run run_multi_line_simulation.py (--menu) (--no-mqtt)
+uv run run_multi_line_simulation.py
 ```
 
 ### 3. Unity Run
@@ -182,7 +187,8 @@ sequenceDiagram
 | `move`       | 命令 AGV 移动到指定路径点                                                          | AGV ID | `{'command_id': 'move_688777', 'action': 'move', 'target': 'AGV_1', 'params': {'target_point': 'P1'}}`                                                                              |
 | `charge`     | 命令 AGV 主动充电                                                                  | AGV ID | `{'command_id': 'charge_688777', 'action': 'charge', 'target': 'AGV_1', 'params': {'target_level': 70.0}}`(default: 80.0)                                                           |
 | `unload`     | 命令 AGV 卸载产品到指定工站                                                        | AGV ID | `{'command_id': 'unload_688777', 'action': 'unload', 'target': 'AGV_2', 'params': {}}`                                                                                              |
-| `load`       | 命令 AGV 从指定工站装载产品                                                        | AGV ID | `{'command_id': 'load_688777', 'action': 'load', 'target': 'AGV_1', 'params': {'product_id': 'prod_1_1ee7ce46'}}`(Product ID only can be used in RawMaterial, else will be ignored) |
+| `load`       | 命令 AGV 从指定工站装载产品                                                        | AGV ID | `{'command_id': 'load_688777', 'action': 'load', 'target': 'AGV_1', 'params': {'product_id': 'prod_1_1ee7ce46'}}`  (Product ID only can be used in RawMaterial, else will be ignored) |
+| `repair`     | 命令 AGV 修复故障                                                                  | AGV ID | `{'command_id': 'repair_688777', 'action': 'repair', 'target': 'AGV_1', 'params': {}}`                                                                      |
 | 全局 action  | topic 中的 line_id 和 payload 中的 target 字段内容可以忽略，仅为过 schema 格式审核 | 全局   | :---                                                                                                                                                                                |
 | `get_result` | 获取当前整个工厂的 KPI 结果                                                        | any    | `{'command_id': 'get_result_688777', 'action': 'get_result', 'target': my factoty', 'params': {}}`                                                                                  |
 
