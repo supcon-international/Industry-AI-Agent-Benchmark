@@ -560,6 +560,28 @@ class AGV(Vehicle):
         finally:
             self.action = None
 
+    def repair(self, device: Optional[Device] = None):
+        """Repair the AGV. Returns (success, feedback_message)"""
+        # If no device specified, repair this AGV
+        target_device_id = device.id if device else self.id
+        
+        if not self.fault_system:
+            return False, "Fault system not initialized"
+        if not self.fault_system.is_device_faulty(target_device_id):
+            return False, f"{target_device_id} is not faulty"
+        if not self.can_complete_task(0, 10):
+            msg = f"Battery level is too low to repair {target_device_id}"
+            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            self.stats["tasks_interrupted"] += 1
+            yield self.env.process(self.emergency_charge())
+            return False, f"{msg}, emergency charging"
+        self.set_status(DeviceStatus.INTERACTING, f"repairing {target_device_id}")
+        yield self.env.timeout(10.0)
+        self.fault_system._clear_fault(target_device_id)
+        
+        self.set_status(DeviceStatus.IDLE, "repaired")
+        return True, f"AGV repaired {target_device_id} successfully"
+    
     def auto_charge_if_needed(self):
         """auto check and charge if needed (background process)"""
         while True:

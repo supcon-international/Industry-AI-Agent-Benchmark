@@ -87,10 +87,11 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
         print("2. 装载")
         print("3. 卸载")
         print("4. 充电")
-        print("5. 注入故障")
-        print("6. 查看结果 (result)")
-        print("7. 自动上料控制")
-        print("8. 退出")
+        print("5. 维修")
+        print("6. 注入故障")
+        print("7. 查看结果 (result)")
+        print("8. 自动上料控制")
+        print("9. 退出")
         op = input("> ").strip().lower()
 
         if op == "1":
@@ -127,6 +128,12 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
 
         elif op == "5":
             line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
+            agv_id_short = input("请输入AGV编号 (e.g., 1, 2): ").strip()
+            agv_id = f"AGV_{agv_id_short}"
+            cmd = {"action": "repair", "target": agv_id, "params": {}}
+
+        elif op == "6":
+            line_id = f"line{input('请输入生产线编号 (e.g., 1, 2, 3): ').strip()}"
             
             if line_id not in factory.lines:
                 print(f"生产线 {line_id} 不存在！")
@@ -136,8 +143,8 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                 print("故障系统未初始化，请先初始化故障系统。")
                 continue
             
-            # 1:StationB, 2:Conveyor_BC, 3:StationC
-            fast_fault = input("请输入故障类型 (1:StationA for 50s, 2:Conveyor_AB for 50s, 3.StationB for 50s,4, Conveyor_BC for 50s, 5:StationC for 50s) else manual: ").strip()
+            # 1:StationA, 2:Conveyor_AB, 3:StationB, 4:Conveyor_BC, 5:StationC, 6:AGV_1
+            fast_fault = input("请输入故障类型 (1:StationA for 50s, 2:Conveyor_AB for 50s, 3.StationB for 50s,4, Conveyor_BC for 50s, 5:StationC for 50s, 6:AGV_1 for 20s) else manual: ").strip()
             if fast_fault == "1":
                 fault_type = FaultType.STATION_FAULT
                 device_id = "StationA"
@@ -158,6 +165,10 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                 fault_type = FaultType.STATION_FAULT
                 device_id = "StationC"
                 fault_duration = 50.0
+            elif fast_fault == "6":
+                fault_type = FaultType.AGV_FAULT
+                device_id = "AGV_1"
+                fault_duration = 20.0
             else:
                 print("手动设置故障，请输入设备编号: ")
                 fault_type_in = input("请输入故障类型 (1:AGV, 2:工站, 3:传送带): ").strip()
@@ -186,7 +197,7 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
             print(f"已注入故障: {device_id} {fault_type.name} {fault_duration}s")
             continue
 
-        elif op == "6" or op == "result":
+        elif op == "7" or op == "result":
             # 通过MQTT发送get_result命令
             line_id = "line1"
             cmd = {
@@ -196,7 +207,7 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                 "params": {}
             }
             
-        elif op == "7":
+        elif op == "8":
             global auto_feed_threads
             print("\n自动上料控制:")
             print("1. 启动自动上料")
@@ -278,7 +289,7 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
                             print(f"    - 间隔时间: {interval} 秒")
             continue
             
-        elif op == "8":
+        elif op == "9":
             print("退出菜单输入线程。")
             break
         else:

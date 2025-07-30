@@ -122,6 +122,8 @@ class MultiLineCommandHandler:
                 self._handle_unload_agv(agv, params, command_id)
             elif action == "charge":
                 self._handle_charge_agv(agv, params, command_id)
+            elif action == "repair":
+                self._handle_repair_agv(agv, params, command_id)
             elif action == "get_result":
                 self._handle_get_result(line_id, params, command_id)
             else:
@@ -209,6 +211,27 @@ class MultiLineCommandHandler:
             self._publish_response(agv.line_id, command_id, message)
         
         self.factory.env.process(charge_process())
+
+    def _handle_repair_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
+        point_ops = agv.get_point_operations(agv.current_point)
+        if not point_ops or not point_ops.get('device'):
+            msg = f"No device can be operated for {agv.id} at position {agv.current_point}"
+            logger.error(msg)
+            self._publish_response(agv.line_id, command_id, msg)
+            return
+        
+        device_id = point_ops['device']
+        target_line = self.factory.lines.get(agv.line_id)
+        device = self._find_device(target_line, device_id)
+        if not device:
+            self._publish_response(agv.line_id, command_id, f"Device '{device_id}' not found in line '{agv.line_id}' or factory.")
+            return
+    
+        def repair_process():
+            success, message = yield from agv.repair(device)
+            self._publish_response(agv.line_id, command_id, message)
+        
+        self.factory.env.process(repair_process())
 
     def _find_device(self, line, device_id: str):
         """

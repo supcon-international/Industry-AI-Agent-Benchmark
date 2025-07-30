@@ -93,7 +93,9 @@ class Line:
         if 'fault_system' in self.config and not self.no_faults_mode:
             fs_config = self.config['fault_system']
             self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client, self.topic_manager, self.name, kpi_calculator=self.kpi_calculator, **fs_config)
-    
+            for agv in self.agvs.values():
+                agv.fault_system = self.fault_system
+
     def _update_agvs_with_kpi(self):
         """Update AGVs with KPI calculator reference."""
         if self.kpi_calculator:

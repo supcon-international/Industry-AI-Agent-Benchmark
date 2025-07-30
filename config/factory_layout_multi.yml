@@ -79,13 +79,13 @@ production_lines:
           P9: [95, 15]
           P10: [10, 10]
         speed_mps: 2.0
-        battery_level: 50.0
+        battery_level: 28.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
       - id: "AGV_2"
         position: [10, 30]
         path_points:
@@ -103,11 +103,11 @@ production_lines:
         speed_mps: 2.0
         battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.5
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
     agv_operations:
       AGV_1:
         P0: {device: "RawMaterial", operations: ["load"]}
@@ -202,11 +202,11 @@ production_lines:
         speed_mps: 2.0
         battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
       - id: "AGV_2"
         position: [10, 70] # Changed Y coordinate
         path_points:
@@ -224,11 +224,11 @@ production_lines:
         speed_mps: 2.0
         battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
     agv_operations:
       AGV_1:
         P0: {device: "RawMaterial", operations: ["load"]}
@@ -322,11 +322,11 @@ production_lines:
         speed_mps: 2.0
         battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
       - id: "AGV_2"
         position: [10, 110] # Changed Y coordinate
         path_points:
@@ -344,11 +344,11 @@ production_lines:
         speed_mps: 2.0
         battery_level: 50.0
         payload_capacity: 2
-        low_battery_threshold: 10.0
+        low_battery_threshold: 15.0
         charging_point: P10
         charging_speed: 3.33
-        battery_consumption_per_meter: 0.1
-        battery_consumption_per_action: 0.5
+        battery_consumption_per_meter: 0.25
+        battery_consumption_per_action: 1
     agv_operations:
       AGV_1:
         P0: {device: "RawMaterial", operations: ["load"]}
