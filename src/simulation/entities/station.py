@@ -1,6 +1,7 @@
 # simulation/entities/station.py
 import simpy
 import random
+import logging
 from typing import Dict, Tuple, Optional, Callable
 
 from config.schemas import DeviceStatus, StationStatus
@@ -36,6 +37,7 @@ class Station(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
+        logger: logging.LoggerAdapter,
         buffer_size: int = 1,
         processing_times: Dict[str, Tuple[int, int]] = {},
         downstream_conveyor=None,
@@ -46,18 +48,12 @@ class Station(Device):
         line_id: Optional[str] = None
     ):
         super().__init__(env, id, position, device_type="station", mqtt_client=mqtt_client, interacting_points=interacting_points)
+        self.logger = logger
         self.topic_manager = topic_manager
         self.line_id = line_id
         self.buffer_size = buffer_size
         self.buffer = simpy.Store(env, capacity=buffer_size)
         self.processing_times = processing_times
-        
-        # # 工站特定属性初始化
-        # self._specific_attributes.update({
-        #     "precision_level": random.uniform(95.0, 100.0),  # 加工精度水平
-        #     "tool_wear_level": random.uniform(0.0, 20.0),    # 刀具磨损程度
-        #     "lubricant_level": random.uniform(80.0, 100.0)   # 润滑油水平
-        # })
         
         # 统计数据
         self.stats = {
@@ -136,6 +132,7 @@ class Station(Device):
                     
             except simpy.Interrupt:
                 # 被中断（通常是故障），继续循环
+                self.logger.warning("Run loop interrupted.")
                 continue
     
     def _wait_for_ready_state(self):
@@ -160,12 +157,12 @@ class Station(Device):
         from waiting for it to processing and transferring it.
         Includes robust error handling for interruptions.
         """
-        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: process_product started for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
+        self.logger.debug(f"process_product started for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
         try:
             # Check if the device can operate
             if not self.can_operate():
-                msg = f"[{self.env.now:.2f}] ⚠️  {self.id}: can not process product, device is not available"
-                print(msg)
+                msg = f"⚠️  {self.id}: can not process product, device is not available"
+                self.logger.warning(msg)
                 self.publish_status(msg)
                 return
 
@@ -183,8 +180,8 @@ class Station(Device):
                 # 恢复处理：使用之前记录的已处理时间
                 elapsed_time = self.current_product_elapsed_time
                 remaining_time = max(0, self.current_product_total_time - elapsed_time)
-                msg = f"[{self.env.now:.2f}] {self.id}: {product.id} resume processing, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
-                print(msg)
+                msg = f"{self.id}: {product.id} resume processing, elapsed {elapsed_time:.1f}s, remaining {remaining_time:.1f}s"
+                self.logger.info(msg)
                 self.publish_status(msg)
                 # 重新记录开始时间，但保留累计时间和总时间
                 self.current_product_start_time = self.env.now
@@ -195,8 +192,8 @@ class Station(Device):
                 self.current_product_total_time = processing_time
                 self.current_product_elapsed_time = 0  # 初始化累计时间
                 remaining_time = processing_time
-                msg = f"[{self.env.now:.2f}] {self.id}: {product.id} start processing, need {processing_time:.1f}s"
-                print(msg)
+                msg = f"{self.id}: {product.id} start processing, need {processing_time:.1f}s"
+                self.logger.info(msg)
                 self.publish_status(msg)
                 
                 # Mark production start for KPI tracking (only for StationA)
@@ -216,8 +213,8 @@ class Station(Device):
             )
             
             # Processing finished successfully
-            msg = f"[{self.env.now:.2f}] {self.id}: {product.id} finished processing, actual processing time {processing_time:.1f}s"
-            print(msg)
+            msg = f"{self.id}: {product.id} finished processing, actual processing time {processing_time:.1f}s"
+            self.logger.info(msg)
             self.publish_status(msg)
             
             # Trigger moving the product to the next stage
@@ -225,19 +222,19 @@ class Station(Device):
 
         except simpy.Interrupt as e:
             message = f"Processing of product {product.id} was interrupted: {e.cause}"
-            print(f"[{self.env.now:.2f}] ⚠️ {self.id}: {message}")
+            self.logger.warning(f"⚠️ {self.id}: {message}")
             
             # 记录中断时已经处理的时间
             if self.current_product_start_time is not None:
                 elapsed_before_interrupt = self.env.now - self.current_product_start_time
                 self.current_product_elapsed_time = (self.current_product_elapsed_time or 0) + elapsed_before_interrupt
-                print(f"[{self.env.now:.2f}] 💾 {self.id}: 产品 {product.id} 中断前已处理 {elapsed_before_interrupt:.1f}s，累计 {self.current_product_elapsed_time:.1f}s")
+                self.logger.debug(f"💾 {self.id}: 产品 {product.id} 中断前已处理 {elapsed_before_interrupt:.1f}s，累计 {self.current_product_elapsed_time:.1f}s")
                 # 清理开始时间，但保留其他记录
                 self.current_product_start_time = None
             
             if product not in self.buffer.items:
                 # 产品已取出，说明处理时间已经完成，应该继续流转，但需要等待设备可操作防止覆盖Fault状态
-                print(f"[{self.env.now:.2f}] 🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
+                self.logger.debug(f"🚚 {self.id}: 产品 {product.id} 已处理完成，继续流转到下游")
                 while not self.can_operate():
                     yield self.env.timeout(1)
                 yield self.env.process(self._transfer_product_to_next_stage(product))
@@ -248,7 +245,7 @@ class Station(Device):
                 self.current_product_elapsed_time = None
             else:
                 # 产品还在buffer中，说明在timeout期间被中断，等待下次处理
-                print(f"[{self.env.now:.2f}] ⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
+                self.logger.debug(f"⏸️  {self.id}: 产品 {product.id} 处理被中断，留在buffer中")
         finally:
             # Clear the action handle once the process is complete or interrupted
             self.action = None
@@ -258,7 +255,7 @@ class Station(Device):
                 self.current_product_start_time = None
                 self.current_product_total_time = None
                 self.current_product_elapsed_time = None
-        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: process_product finished for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
+        self.logger.debug(f"process_product finished for {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
 
     def _transfer_product_to_next_stage(self, product):
         """Transfer the processed product to the next station or conveyor."""
@@ -292,11 +289,11 @@ class Station(Device):
         
         # 取出第一个产品
         product = yield self.buffer.get()
-        print(f"[{self.env.now:.2f}] [DEBUG] Station {self.id}: pop {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
+        self.logger.debug(f"pop {product.id}, buffer={len(self.buffer.items)}/{self.buffer.capacity}")
         
         # 发布状态更新
         msg = f"Product {product.id} taken from {self.id} by AGV"
-        print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
+        self.logger.info(f"📤 {self.id}: {msg}")
         self.publish_status(msg)
         return product
 
@@ -306,13 +303,13 @@ class Station(Device):
 
         try:
             yield self.buffer.put(product)
-            msg = f"[{self.env.now:.2f}] 📥 {self.id}: Product {product.id} added to buffer."
+            msg = f"📥 {self.id}: Product {product.id} added to buffer."
             success = True
         except simpy.Interrupt:
-            msg = f"[{self.env.now:.2f}] ⚠️ {self.id}: add_product_to_buffer interrupted."
+            msg = f"⚠️ {self.id}: add_product_to_buffer interrupted."
             success = False
 
-        print(msg)
+        self.logger.debug(msg)
         self.publish_status(msg)
         return success
 
@@ -349,7 +346,7 @@ class Station(Device):
         if self.current_product_id:
             products_in_buffer = {p.id for p in self.buffer.items}
             if self.current_product_id not in products_in_buffer:
-                print(f"[{self.env.now:.2f}] 🗑️ Station {self.id}: 清理过期产品 {self.current_product_id} 的时间记录")
+                self.logger.debug(f"🗑️ Station {self.id}: 清理过期产品 {self.current_product_id} 的时间记录")
                 self.current_product_id = None
                 self.current_product_start_time = None
                 self.current_product_total_time = None
@@ -358,11 +355,11 @@ class Station(Device):
         # 只有当设备处于FAULT状态时才恢复
         if self.status == DeviceStatus.FAULT:
             self.set_status(DeviceStatus.IDLE)
-            msg = f"[{self.env.now:.2f}] ✅ Station {self.id} is recovered."
-            print(msg)
+            msg = f"✅ Station {self.id} is recovered."
+            self.logger.info(msg)
             self.publish_status(msg)
         else:
             # 如果设备不是FAULT状态，只打印恢复尝试的信息
-            msg = f"[{self.env.now:.2f}] ℹ️ Station {self.id}: Recovery attempted, but status is {self.status.value}, not changing."
-            print(msg)
+            msg = f"ℹ️ Station {self.id}: Recovery attempted, but status is {self.status.value}, not changing."
+            self.logger.info(msg)
 

@@ -28,7 +28,7 @@ class CommandHandler:
         
         # Subscribe to agent commands
         self.mqtt_client.subscribe(AGENT_COMMANDS_TOPIC, self._handle_command_message)
-        logger.info(f"CommandHandler initialized and subscribed to {AGENT_COMMANDS_TOPIC}")
+        logger.debug(f"CommandHandler initialized and subscribed to {AGENT_COMMANDS_TOPIC}")
 
     def _handle_command_message(self, topic: str, payload: bytes):
         """

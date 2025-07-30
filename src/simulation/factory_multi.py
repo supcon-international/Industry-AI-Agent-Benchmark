@@ -1,6 +1,7 @@
 # src/simulation/factory_multi.py
 import os
 import simpy
+import logging
 from typing import Dict, List, Optional
 
 from src.simulation.line import Line
@@ -9,6 +10,7 @@ from src.utils.mqtt_client import MQTTClient
 from src.simulation.entities.warehouse import Warehouse, RawMaterial
 from src.game_logic.order_generator import OrderGenerator
 from src.utils.topic_manager import TopicManager
+from src.utils.logger_config import get_sim_logger
 
 class Factory:
     """
@@ -20,6 +22,7 @@ class Factory:
         self.mqtt_client = mqtt_client
         self.no_faults_mode = no_faults
         self.topic_manager = topic_manager
+        self.logger = get_sim_logger(self.env, "simulation.factory")
 
         self.lines: Dict[str, Line] = {}
         self.raw_material: RawMaterial
@@ -52,27 +55,31 @@ class Factory:
                 kpi_calculator=self.kpi_calculator
             )
             self.lines[line_name] = line
-            print(f"[{self.env.now:.2f}] 🏭 Created Production Line: {line_name}")
+            # self.logger.info(f"🏭 Created Production Line: {line_name}")
 
     def _create_warehouse_order_generator(self):
         """Creates the warehouse for the factory."""
+        warehouse_logger = get_sim_logger(self.env, "simulation.warehouse")
         for warehouse_cfg in self.layout.get('warehouses', []):
-            common_args = {"env": self.env, "mqtt_client": self.mqtt_client, "topic_manager": self.topic_manager, **warehouse_cfg}
+            common_args = {"env": self.env, "mqtt_client": self.mqtt_client, "topic_manager": self.topic_manager, "logger": warehouse_logger, **warehouse_cfg}
             if warehouse_cfg['id'] == 'RawMaterial':
                 self.raw_material = RawMaterial(**common_args, kpi_calculator=self.kpi_calculator)
             elif warehouse_cfg['id'] == 'Warehouse':
                 self.warehouse = Warehouse(**common_args)
 
-            if self.raw_material:
-                og_config = self.layout.get('order_generator', {})
-                self.order_generator = OrderGenerator(
-                    env=self.env,
-                    raw_material=self.raw_material,
-                    mqtt_client=self.mqtt_client,
-                    topic_manager=self.topic_manager,
-                    kpi_calculator=self.kpi_calculator,
-                    **og_config
-                )
+        if self.raw_material:
+
+            og_logger = get_sim_logger(self.env, "simulation.order_generator")
+            og_config = self.layout.get('order_generator', {})
+            self.order_generator = OrderGenerator(
+                env=self.env,
+                raw_material=self.raw_material,
+                mqtt_client=self.mqtt_client,
+                topic_manager=self.topic_manager,
+                kpi_calculator=self.kpi_calculator,
+                logger=og_logger,
+                **og_config
+            )
 
         # Add global devices to all_devices
         if hasattr(self, 'warehouse') and self.warehouse is not None:

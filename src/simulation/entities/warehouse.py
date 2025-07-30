@@ -1,6 +1,7 @@
 # simulation/entities/warehouse.py
 import simpy
 import random
+import logging
 from typing import Dict, Tuple, Optional
 
 from src.simulation.entities.base import Device
@@ -17,6 +18,7 @@ class BaseWarehouse(Device):
         env: simpy.Environment,
         id: str,
         position: Tuple[int, int],
+        logger: logging.LoggerAdapter,
         mqtt_client=None,
         interacting_points: list = [],
         topic_manager: Optional[TopicManager] = None,
@@ -24,6 +26,7 @@ class BaseWarehouse(Device):
         **kwargs # Absorb other config values
     ):
         super().__init__(env, id, position, device_type="warehouse", mqtt_client=mqtt_client)
+        self.logger = logger
         self.buffer = simpy.Store(env)
         self.interacting_points = interacting_points
         self.stats = {}  # To be overridden by subclasses
@@ -62,18 +65,18 @@ class BaseWarehouse(Device):
             for idx, p in enumerate(self.buffer.items):
                 if p.id == product_id:
                     product = self.buffer.items.pop(idx)
-                    print(f"[{self.env.now:.2f}] 📤 {self.id}: Product {product.id} taken from warehouse buffer.")
+                    self.logger.debug(f"📤 Product {product.id} taken from warehouse buffer.")
                     break
             else:
                 # If not found, raise an error
                 raise ValueError(f"Product with id {product_id} not found in warehouse buffer.")
         else:
             product = yield self.buffer.get()
-            print(f"[{self.env.now:.2f}] 📤 {self.id}: Default Product taken from warehouse buffer.")
+            self.logger.debug(f"📤 Default Product taken from warehouse buffer.")
 
         # 发布状态更新
         msg = f"Product {product.id} taken from {self.id} by AGV"
-        print(f"[{self.env.now:.2f}] 📤 {self.id}: {msg}")
+        self.logger.info(f"📤 {self.id}: {msg}")
         self.publish_status(msg)
         return product
 
@@ -99,7 +102,7 @@ class RawMaterial(BaseWarehouse):
             "total_materials_supplied": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0}
         }
-        print(f"[{self.env.now:.2f}] 🏭 {self.id}: Raw material warehouse is ready")
+        # self.logger.info(f"🏭 {self.id}: Raw material warehouse is ready")
         self.publish_status("Raw material warehouse is ready")
 
     def create_raw_material(self, product_type: str, order_id: str) -> Product:
@@ -108,7 +111,7 @@ class RawMaterial(BaseWarehouse):
         self.stats["total_materials_supplied"] += 1
         self.stats["product_type_summary"][product_type] += 1
         product.add_history(self.env.now, f"Raw material created at {self.id}")
-        print(f"[{self.env.now:.2f}] 🔧 {self.id}: Create raw material {product.id} (type: {product_type})")
+        self.logger.info(f"🔧 {self.id}: Create raw material {product.id} (type: {product_type})")
         self.buffer.put(product)
         self.publish_status(f"Supply raw material {product.id} (type: {product_type}) since order {order_id} is created")
         return product
@@ -133,7 +136,7 @@ class RawMaterial(BaseWarehouse):
                 order_tracking = self.kpi_calculator.active_orders[product.order_id]
                 order_tracking.total_cost += material_cost
             
-            print(f"[{self.env.now:.2f}] 💰 {self.id}: Added material cost ${material_cost:.2f} for {product.product_type}")
+            self.logger.info(f"💰 {self.id}: Added material cost ${material_cost:.2f} for {product.product_type}")
             
             # Trigger KPI update
             self.kpi_calculator._check_and_publish_kpi_update()
@@ -158,7 +161,7 @@ class Warehouse(BaseWarehouse):
             "total_products_received": 0,
             "product_type_summary": {"P1": 0, "P2": 0, "P3": 0},
         }
-        print(f"[{self.env.now:.2f}] 🏪 {self.id}: Finished product warehouse is ready")
+        # self.logger.info(f"🏪 {self.id}: Final product warehouse is ready")
         self.publish_status("Warehouse is ready")
 
     def add_product_to_buffer(self, product: Product):
@@ -168,7 +171,7 @@ class Warehouse(BaseWarehouse):
         self.stats["total_products_received"] += 1
         self.stats["product_type_summary"][product.product_type] += 1
         product.add_history(self.env.now, f"Stored in warehouse {self.id}")
-        print(f"[{self.env.now:.2f}] 📦 {self.id}: Store finished product {product.id} (type: {product.product_type})")
+        self.logger.info(f"📦 {self.id}: Store finished product {product.id} (type: {product.product_type})")
         return True
     
     def is_full(self) -> bool:

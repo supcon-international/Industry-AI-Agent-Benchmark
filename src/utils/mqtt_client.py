@@ -38,7 +38,7 @@ class MQTTClient:
 
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
-            logger.info(f"Successfully connected to MQTT Broker at {self._host}:{self._port}")
+            logger.debug(f"Successfully connected to MQTT Broker at {self._host}:{self._port}")
             if self._topic_manager:
                 pong_topic = self._topic_manager.get_heartbeat_topic(ping=False)
                 self._client.subscribe(pong_topic)
@@ -67,7 +67,7 @@ class MQTTClient:
             self.last_pong_time = time.time()  # Initialize pong time
             self.heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
             self.heartbeat_thread.start()
-            logger.info("Heartbeat thread started.")
+            logger.debug("Heartbeat thread started.")
 
     def set_alert_callback(self, callback):
         """设置告警回调函数（如发送邮件/Slack）"""
@@ -81,7 +81,7 @@ class MQTTClient:
         """
         Internal callback to route messages to the appropriate topic-specific callback.
         """
-        logger.debug(f"Received message on topic {msg.topic}")
+        # logger.debug(f"Received message on topic {msg.topic}")
         if self._topic_manager and msg.topic == self._topic_manager.get_heartbeat_topic(ping=False):
             if msg.payload.decode() == "pong":
                 self.update_last_pong_time()
@@ -103,7 +103,6 @@ class MQTTClient:
         Connects to the MQTT broker and starts the network loop in a separate thread.
         """
         try:
-            logger.info(f"Connecting to MQTT Broker at {self._host}:{self._port}...")
             self._client.connect(self._host, self._port, 60)
             self._client.loop_start()
         except Exception as e:
@@ -117,9 +116,8 @@ class MQTTClient:
         retry_interval = 0.5
         for i in range(max_retries):
             if self.is_connected():
-                logger.info("✅ MQTT client is fully connected.")
                 break
-            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+            logger.debug(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
             time.sleep(retry_interval)
         else:
             logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
@@ -129,7 +127,7 @@ class MQTTClient:
         """
         Stops the network loop and disconnects from the MQTT broker.
         """
-        logger.info("Disconnecting from MQTT Broker.")
+        # logger.debug("Disconnecting from MQTT Broker.")
         self._client.loop_stop()
         self._client.disconnect()
 
@@ -146,7 +144,7 @@ class MQTTClient:
         if not callable(callback):
             raise TypeError("Callback must be a callable function")
             
-        logger.info(f"Subscribing to topic: {topic}")
+        # logger.debug(f"Subscribing to topic: {topic}")
         self._message_callbacks[topic] = callback
         self._client.subscribe(topic, qos)
 
@@ -168,8 +166,6 @@ class MQTTClient:
         else:
             message = str(payload)
             # raise TypeError("Payload must be a string or a Pydantic BaseModel")
-
-        logger.debug(f"Publishing to topic '{topic}': {message}")
         result = self._client.publish(topic, message, qos, retain)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             logger.error(f"Failed to publish to topic {topic}: {mqtt.error_string(result.rc)}") 

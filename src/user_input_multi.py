@@ -1,12 +1,15 @@
 import json
 import threading
 import time
+import logging
 from src.simulation.factory_multi import Factory
 from src.utils.mqtt_client import MQTTClient
 from config.topics import AGENT_COMMANDS_TOPIC, RESULT_TOPIC
 from src.game_logic.fault_system import FaultType
 from src.utils.topic_manager import TopicManager
 from src.simulation.entities.product import Product
+
+logger = logging.getLogger(__name__)
 
 # 全局变量控制自动上料
 auto_feed_threads = {}  # {line_id: {"thread": thread, "active": bool}}
@@ -48,17 +51,17 @@ def auto_feed_station_a(factory: Factory, line_id: str, interval: float = 2.0, p
                 station_a.buffer.put(product)
                 product.update_location(station_a.id, factory.env.now)
                 product.add_history(factory.env.now, f"Auto-fed to StationA in {line_id}")
-                print(f"{factory.env.now:.2f} ✅ 添加产品 {product.id} (类型: {product_type}) 到 {line_id} StationA")
+                logger.info(f"✅ 添加产品 {product.id} (类型: {product_type}) 到 {line_id} StationA")
                 # 发布状态更新
                 station_a.publish_status(f"Auto-fed product {product.id} added to buffer")
             else:
-                print(f" {factory.env.now:.2f}⏸️  {line_id} StationA 的 buffer 已满，等待下次尝试")
+                logger.warning(f"⏸️  {line_id} StationA 的 buffer 已满，等待下次尝试")
         except Exception as e:
-            print(f"[自动上料] ❌ 错误: {e}")
+            logger.error(f"[自动上料] ❌ 错误: {e}", exc_info=True)
         
         time.sleep(interval)
     
-    print(f"[自动上料] {line_id} 的自动上料已停止")
+    logger.info(f"[自动上料] {line_id} 的自动上料已停止")
 
 def get_device_map(factory: Factory) -> dict:
     """Creates a mapping from simple codes to full device IDs."""
@@ -299,4 +302,4 @@ def menu_input_thread(mqtt_client: MQTTClient, factory: Factory, topic_manager: 
         # Only publish command if cmd was defined and line_id exists
         if 'cmd' in locals() and 'line_id' in locals():
             mqtt_client.publish(topic_manager.get_agent_command_topic(line_id), json.dumps(cmd))
-            print(f"已发送命令: {cmd}")
+            logger.info(f"已发送命令: {cmd}")

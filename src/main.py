@@ -61,7 +61,7 @@ class FactorySimulation:
             if self.mqtt_client.is_connected():
                 logger.info("✅ MQTT client is fully connected.")
                 break
-            logger.info(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
+            logger.debug(f"Waiting for MQTT connection... ({i+1}/{max_retries})")
             time.sleep(retry_interval)
         else:
             logger.error("❌ Failed to connect to MQTT broker within the given time. Exiting simulation.")
@@ -183,7 +183,7 @@ def main(argv=None):
         if args.menu:
             import threading
             threading.Thread(target=menu_input_thread, args=(simulation.mqtt_client, simulation.factory), daemon=True).start()
-            logger.info("Interactive menu enabled. Type commands in the console.")
+            logger.debug("Interactive menu enabled. Type commands in the console.")
 
         simulation.run()  # Run indefinitely
     except Exception as e:

@@ -1,7 +1,9 @@
 # simulation/entities/agv.py
 import simpy
 import math
+import logging
 from typing import Tuple, Dict, Optional, List
+
 from src.simulation.entities.base import Vehicle, Device
 from src.simulation.entities.product import Product
 from src.simulation.entities.quality_checker import QualityChecker
@@ -11,9 +13,6 @@ from src.simulation.entities.warehouse import RawMaterial, Warehouse
 from config.schemas import DeviceStatus, AGVStatus
 from src.utils.topic_manager import TopicManager
 from config.path_timing import get_travel_time, is_path_available
-import logging
-
-logger = logging.getLogger(__name__)
 
 class AGV(Vehicle):
     """
@@ -38,6 +37,7 @@ class AGV(Vehicle):
         position: Tuple[int, int],
         path_points: Dict[str, Tuple[int, int]],
         speed_mps: float,
+        logger: logging.LoggerAdapter,
         payload_capacity: int = 1,
         operation_time: float = 1.0,
         battery_level: float = 50.0,
@@ -57,6 +57,7 @@ class AGV(Vehicle):
             raise ValueError(f"AGV position {position} not in path_points {path_points}")
 
         super().__init__(env, id, position, speed_mps, mqtt_client)
+        self.logger = logger
         self.topic_manager = topic_manager
         self.line_id = line_id
         self.battery_level = battery_level
@@ -99,10 +100,10 @@ class AGV(Vehicle):
         self.battery_level = max(0.0, self.battery_level - amount)
         
         if old_level > self.low_battery_threshold and self.battery_level <= self.low_battery_threshold:
-            msg = f"[{self.env.now:.2f}] 🔋 {self.id}: Battery low! Current battery: {self.battery_level:.1f}% (Reason: {reason})"
+            msg = f"🔋 {self.id}: Battery low! Current battery: {self.battery_level:.1f}% (Reason: {reason})"
             # 电量首次降到阈值以下时告警
             self.publish_status(msg)
-            print(msg)
+            self.logger.warning(msg)
 
     def is_battery_low(self) -> bool:
         """检查电量是否过低"""
@@ -154,7 +155,7 @@ class AGV(Vehicle):
             return result if result else (True, f"成功移动到{target_point}")
         except simpy.Interrupt as e:
             msg = f"Movement to {target_point} interrupted: {e.cause}"
-            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            self.logger.warning(f"⚠️  {self.id}: {msg}")
             return False, msg
             
     def _move_to_process(self, target_point: str):
@@ -162,7 +163,7 @@ class AGV(Vehicle):
         try:
             if target_point not in self.path_points:
                 msg = f"Unknown path point {target_point}"
-                logger.error(f"[{self.env.now:.2f}] ❌ {self.id}: {msg}")
+                self.logger.error(f"❌ {self.id}: {msg}")
                 return False, msg
                 
             self.target_point = target_point
@@ -171,7 +172,7 @@ class AGV(Vehicle):
             travel_time = get_travel_time(self.current_point, target_point)
             if travel_time < 0:
                 msg = f"Can not find path from {self.current_point} to {target_point}"
-                print(f"[{self.env.now:.2f}] ❌ {self.id}: {msg}")
+                self.logger.error(f"❌ {self.id}: {msg}")
                 return False, msg
                 
             # check if battery is enough
@@ -181,17 +182,17 @@ class AGV(Vehicle):
                 required_battery = distance_to_charging * self.battery_consumption_per_meter + 1.0  # 1% safety margin
                 if self.battery_level < required_battery:
                     msg = f"Battery critically low ({self.battery_level:.1f}%), cannot even reach charging point"
-                    print(f"[{self.env.now:.2f}] 🚨 {self.id}: {msg}")
+                    self.logger.error(f"🚨 {self.id}: {msg}")
                     return False, msg
             elif not self.can_complete_task(travel_time, 1, target_point):
                 msg = f"Battery level is too low to move to {target_point}"
-                print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+                self.logger.warning(f"🔋 {self.id}: {msg}")
                 self.stats["tasks_interrupted"] += 1
                 yield self.env.process(self.emergency_charge())
                 return False, f"{msg}, emergency charging"
                 
             self.set_status(DeviceStatus.MOVING, f"moving to {target_point} from {self.current_point}, estimated time: {travel_time:.1f}s")
-            print(f"[{self.env.now:.2f}] 🚛 {self.id}: move to path point {target_point} {self.path_points[target_point]} (estimated time: {travel_time:.1f}s)")
+            self.logger.debug(f"🚛 {self.id}: move to path point {target_point} {self.path_points[target_point]} (estimated time: {travel_time:.1f}s)")
             
             # wait for move to complete
             self.estimated_time = travel_time
@@ -219,7 +220,7 @@ class AGV(Vehicle):
                 # Add energy cost for AGV movement
                 self.kpi_calculator.add_energy_cost(f"AGV_{self.id}", self.line_id, travel_time, is_peak_hour=False)
             
-            print(f"[{self.env.now:.2f}] ✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
+            self.logger.debug(f"✅ {self.id}: 到达 {target_point}, 电量: {self.battery_level:.1f}%")
             
             # Before setting to IDLE, check for pending faults
             if self._check_and_trigger_pending_fault():
@@ -235,10 +236,10 @@ class AGV(Vehicle):
         """Get the allowed operations and device info for a specific path point."""
         ops = self.agv_operations.get(point)
         if not self.agv_operations:
-            print(f"DEBUG: {self.id} has no agv_operations configured")
+            self.logger.debug(f"{self.id} has no agv_operations configured")
         elif point not in self.agv_operations:
-            print(f"DEBUG: {self.id} has no operations defined for point {point}")
-            print(f"DEBUG: Available points: {list(self.agv_operations.keys())}")
+            self.logger.debug(f"{self.id} has no operations defined for point {point}")
+            self.logger.debug(f"Available points: {list(self.agv_operations.keys())}")
         return ops
     
     def load_from(self, device:Device, buffer_type=None, product_id: Optional[str] = None):
@@ -248,7 +249,7 @@ class AGV(Vehicle):
         """
         if self.is_payload_full():
             msg = f"Can not load. AGV {self.id} payload is full."
-            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            self.logger.warning(f"⚠️  {self.id}: {msg}")
             return False, msg, None
         
         # check battery level
@@ -287,7 +288,7 @@ class AGV(Vehicle):
                     feedback = f"{device.id} buffer为空，无法取货"
                     return False, feedback, None
                 try:
-                    print(f"TEST: agv load from raw material with product_id {product_id}")
+                    self.logger.debug(f"Attempting to load from raw material with product_id {product_id}")
                     product = yield self.env.process(device.pop(product_id))
                     success = True
                 except ValueError as e:
@@ -331,7 +332,7 @@ class AGV(Vehicle):
                 
             else:
                 feedback = f"不支持的设备类型: {type(device).__name__}"
-                logger.error(feedback)
+                self.logger.error(feedback)
                 return False, feedback, None
                 
             # 成功取货后的操作
@@ -359,7 +360,7 @@ class AGV(Vehicle):
         # check if agv can operate
         if device.is_full():
             msg = f"Can not unload. {device.id} is full."
-            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            self.logger.warning(f"⚠️  {self.id}: {msg}")
             return False, msg, None
         
         # Validate operation against AGV operations mapping
@@ -367,13 +368,13 @@ class AGV(Vehicle):
         if point_ops:
             # Check if device matches
             if point_ops.get('device') != device.id:
-                msg = f"[{self.env.now:.2f}] ❌ {self.id}: Cannot unload to {device.id} at {self.current_point}. Expected device: {point_ops.get('device')}"
-                logger.error(msg)
+                msg = f"❌ {self.id}: Cannot unload to {device.id} at {self.current_point}. Expected device: {point_ops.get('device')}"
+                self.logger.error(msg)
                 return False, msg, None
             # Check if unload operation is allowed
             if 'unload' not in point_ops.get('operations', []):
-                msg = f"[{self.env.now:.2f}] ❌ {self.id}: Unload operation not allowed at {self.current_point}"
-                logger.error(msg)
+                msg = f"❌ {self.id}: Unload operation not allowed at {self.current_point}"
+                self.logger.error(msg)
                 return False, msg, None
             # Use buffer from mapping if not specified
             if buffer_type is None and 'buffer' in point_ops:
@@ -441,7 +442,7 @@ class AGV(Vehicle):
                 if hasattr(product, 'update_location'):
                     location_updated = product.update_location(device.id, self.env.now)
                     if not location_updated:
-                        print(f"[{self.env.now:.2f}] ⚠️  {self.id}: 产品位置更新失败，但卸载成功")
+                        self.logger.warning(f"⚠️  {self.id}: 产品位置更新失败，但卸载成功")
                 
                 yield self.env.timeout(self.operation_time)
                 self.consume_battery(self.battery_consumption_per_action, "卸载操作")
@@ -467,17 +468,17 @@ class AGV(Vehicle):
         """Charge battery to target level. Returns (success, feedback_message)"""
         if self.status == DeviceStatus.CHARGING:
             msg = f"already charging"
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            self.logger.debug(f"🔋 {self.id}: {msg}")
             return True, msg
         
         if self.is_busy():
             msg = f"AGV {self.id} is currently busy in {self.status.value}."
-            logger.error(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            self.logger.warning(f"⚠️  {self.id}: {msg}")
             return False, msg
             
         if self.battery_level >= target_level:
             msg = f"battery level is enough ({self.battery_level:.1f}%)"
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            self.logger.debug(f"🔋 {self.id}: {msg}")
             return True, msg
             
         # move to charging point
@@ -491,7 +492,7 @@ class AGV(Vehicle):
         charge_needed = target_level - self.battery_level
         charge_time = charge_needed / self.charging_speed
         
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: start charging ({self.battery_level:.1f}% → {target_level:.1f}%, estimated {charge_time:.1f}s)")
+        self.logger.info(f"🔋 {self.id}: start charging ({self.battery_level:.1f}% → {target_level:.1f}%, estimated {charge_time:.1f}s)")
         
         yield self.env.timeout(charge_time)
         
@@ -514,7 +515,7 @@ class AGV(Vehicle):
             if hasattr(self, '_is_active_charge'):
                 del self._is_active_charge
         
-        print(f"[{self.env.now:.2f}] ✅ {self.id}: 充电完成，当前电量: {self.battery_level:.1f}%")
+        self.logger.info(f"✅ {self.id}: 充电完成，当前电量: {self.battery_level:.1f}%")
 
         # Before setting to IDLE, check for pending faults
         if self._check_and_trigger_pending_fault():
@@ -525,7 +526,7 @@ class AGV(Vehicle):
 
     def emergency_charge(self):
         """Emergency charging when battery is critically low."""
-        print(f"[{self.env.now:.2f}] 🚨 {self.id}: emergency charging started")
+        self.logger.warning(f"🚨 {self.id}: emergency charging started")
         self.stats["forced_charge_count"] += 1
         self.stats["low_battery_interruptions"] += 1
         
@@ -540,7 +541,7 @@ class AGV(Vehicle):
     def voluntary_charge(self, target_level: float = 80.0):
         """Voluntary charging to maintain good battery level. Returns (success, feedback_message)"""
         target_level = float(target_level)
-        print(f"[{self.env.now:.2f}] 🔋 {self.id}: voluntary charging")
+        self.logger.info(f"🔋 {self.id}: voluntary charging")
         self.stats["voluntary_charge_count"] += 1
         
         # Report to KPI calculator
@@ -555,7 +556,7 @@ class AGV(Vehicle):
             return result if result else (True, f"充电完成到 {target_level:.1f}%")
         except simpy.Interrupt as e:
             msg = f"Charging interrupted: {e.cause}"
-            print(f"[{self.env.now:.2f}] ⚠️  {self.id}: {msg}")
+            self.logger.warning(f"⚠️  {self.id}: {msg}")
             return False, msg
         finally:
             self.action = None
@@ -571,7 +572,7 @@ class AGV(Vehicle):
             return False, f"{target_device_id} is not faulty"
         if not self.can_complete_task(0, 10):
             msg = f"Battery level is too low to repair {target_device_id}"
-            print(f"[{self.env.now:.2f}] 🔋 {self.id}: {msg}")
+            self.logger.warning(f"🔋 {self.id}: {msg}")
             self.stats["tasks_interrupted"] += 1
             yield self.env.process(self.emergency_charge())
             return False, f"{msg}, emergency charging"
@@ -590,7 +591,7 @@ class AGV(Vehicle):
             
             # if battery is low and not charging, start emergency charging
             if self.is_battery_low() and self.status != DeviceStatus.CHARGING:
-                print(f"[{self.env.now:.2f}] 🔋 {self.id}: battery is low, start emergency charging")
+                self.logger.warning(f"🔋 {self.id}: battery is low, start emergency charging")
                 yield self.env.process(self.emergency_charge())
 
     def get_battery_status(self) -> dict:
@@ -647,7 +648,7 @@ class AGV(Vehicle):
         """
         if self.fault_system and self.id in self.fault_system.pending_agv_faults:
             fault_type = self.fault_system.pending_agv_faults.pop(self.id)
-            print(f"[{self.env.now:.2f}] 💥 AGV {self.id} is idle, triggering pending fault: {fault_type.value}")
+            self.logger.warning(f"💥 AGV {self.id} is idle, triggering pending fault: {fault_type.value}")
             self.fault_system._inject_fault_now(self.id, fault_type)
             return True
         return False

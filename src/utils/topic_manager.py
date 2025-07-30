@@ -1,6 +1,8 @@
 # src/utils/topic_manager.py
 import os
 from typing import Dict, Optional
+import logging
+logger = logging.getLogger(__name__)
 
 class TopicManager:
     """
@@ -16,7 +18,7 @@ class TopicManager:
         if not root_topic or not isinstance(root_topic, str) or "/" in root_topic:
             raise ValueError("Root topic cannot be empty or contain '/'")
         self.root = root_topic
-        print(f"✅ TopicManager initialized with root topic: '{self.root}'")
+        logger.debug(f"✅ TopicManager initialized with root topic: '{self.root}'")
 
     def get_station_status_topic(self, line_id: str, device_id: str) -> str:
         """Generates topic for device status updates."""

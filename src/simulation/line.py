@@ -12,6 +12,7 @@ from src.game_logic.fault_system import FaultSystem
 from src.game_logic.kpi_calculator import KPICalculator
 from src.utils.mqtt_client import MQTTClient
 from src.utils.topic_manager import TopicManager
+from src.utils.logger_config import get_sim_logger
 
 class Line:
     """
@@ -29,6 +30,7 @@ class Line:
         self.topic_manager = topic_manager
         self.no_faults_mode = no_faults
         self.fault_system: Optional[FaultSystem] = None
+        self.logger = get_sim_logger(self.env, f"simulation.line.{self.name}")
 
         # Shared resources injected from Factory
         self.warehouse = warehouse
@@ -60,27 +62,31 @@ class Line:
     def _create_devices(self):
         """Instantiates all devices for this line based on its configuration."""
         for station_cfg in self.config.get('stations', []):
+            device_logger = get_sim_logger(self.env, f"simulation.{self.name}.{station_cfg['id']}")
             if station_cfg['id'] == 'QualityCheck':
-                station = QualityChecker(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, line_id=self.name, **station_cfg)
+                station = QualityChecker(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, line_id=self.name, logger=device_logger, **station_cfg)
             else:
-                station = Station(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, line_id=self.name, **station_cfg)
+                station = Station(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, line_id=self.name, logger=device_logger, **station_cfg)
             self.stations[station.id] = station
 
         for agv_cfg in self.config.get('agvs', []):
+            device_logger = get_sim_logger(self.env, f"simulation.{self.name}.{agv_cfg['id']}")
             # Get agv_operations for this specific AGV
             agv_operations = self.config.get('agv_operations', {}).get(agv_cfg['id'], {})
             agv = AGV(env=self.env, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, 
                      fault_system=self.fault_system, kpi_calculator=self.kpi_calculator,
-                     line_id=self.name, agv_operations=agv_operations, **agv_cfg)
+                     line_id=self.name, agv_operations=agv_operations, logger=device_logger, **agv_cfg)
             self.agvs[agv.id] = agv
 
         for conveyor_cfg in self.config.get('conveyors', []):
             conveyor_id = conveyor_cfg['id']
+            device_logger = get_sim_logger(self.env, f"simulation.{self.name}.{conveyor_id}")
             common_args = {
                 "env": self.env, "id": conveyor_id, "position": conveyor_cfg['position'],
                 "interacting_points": conveyor_cfg['interacting_points'],
                 "transfer_time": conveyor_cfg['transfer_time'], "mqtt_client": self.mqtt_client,
-                "topic_manager": self.topic_manager, "line_id": self.name, "kpi_calculator": self.kpi_calculator
+                "topic_manager": self.topic_manager, "line_id": self.name, "kpi_calculator": self.kpi_calculator,
+                "logger": device_logger
             }
             if conveyor_cfg['id'] == 'Conveyor_CQ':
                 conveyor = TripleBufferConveyor(**common_args, main_capacity=conveyor_cfg['main_capacity'], upper_capacity=conveyor_cfg['upper_capacity'], lower_capacity=conveyor_cfg['lower_capacity'])
@@ -91,8 +97,9 @@ class Line:
     def _create_game_logic_systems(self):
         """Creates game logic systems like FaultSystem for this line."""
         if 'fault_system' in self.config and not self.no_faults_mode:
+            fs_logger = get_sim_logger(self.env, f"simulation.{self.name}.fault_system")
             fs_config = self.config['fault_system']
-            self.fault_system = FaultSystem(self.env, self.all_devices, self.mqtt_client, self.topic_manager, self.name, kpi_calculator=self.kpi_calculator, **fs_config)
+            self.fault_system = FaultSystem(self.env, self.all_devices, logger=fs_logger, mqtt_client=self.mqtt_client, topic_manager=self.topic_manager, line_id=self.name, kpi_calculator=self.kpi_calculator, **fs_config)
             for agv in self.agvs.values():
                 agv.fault_system = self.fault_system
 

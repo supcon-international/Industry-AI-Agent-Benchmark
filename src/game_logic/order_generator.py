@@ -2,6 +2,7 @@
 import random
 import uuid
 import simpy
+import logging
 from typing import Dict, List, Optional
 
 from config.schemas import NewOrder, OrderItem, OrderPriority
@@ -21,8 +22,9 @@ class OrderGenerator:
     - Priority distribution: Low(70%), Medium(25%), High(5%)
     """
     
-    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, kpi_calculator: Optional[KPICalculator] = None, **kwargs):
+    def __init__(self, env: simpy.Environment, raw_material: RawMaterial, logger: logging.LoggerAdapter, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, kpi_calculator: Optional[KPICalculator] = None, **kwargs):
         self.env = env
+        self.logger = logger
         self.mqtt_client = mqtt_client
         self.topic_manager = topic_manager
         self.raw = raw_material
@@ -69,7 +71,7 @@ class OrderGenerator:
     def _generate_order(self) -> Optional[NewOrder]:
         """Generate a single order according to PRD specifications."""
         if self.raw.is_full():
-            print(f"[{self.env.now:.2f}] ❌ Raw material warehouse is full, cannot accept new order")
+            self.logger.warning(f"❌ Raw material warehouse is full, cannot accept new order")
             return None
         
         order_id = f"order_{uuid.uuid4().hex[:8]}"
@@ -149,9 +151,9 @@ class OrderGenerator:
             if self.kpi_calculator:
                 self.kpi_calculator.register_new_order(order)
             
-            # print(f"[{self.env.now:.2f}] 📋 New order generated: {order.order_id}")
-            # print(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
-            # print(f"   - Priority: {order.priority.value}")
-            # print(f"   - Deadline: {order.deadline:.1f}s (in {order.deadline - self.env.now:.1f}s)")
+            self.logger.debug(f"📋 New order generated: {order.order_id}")
+            self.logger.debug(f"   - Items: {[(item.product_type, item.quantity) for item in order.items]}")
+            self.logger.debug(f"   - Priority: {order.priority.value}")
+            self.logger.debug(f"   - Deadline: {order.deadline:.1f}s (in {order.deadline - self.env.now:.1f}s)")
         except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ Failed to publish order: {e}") 
+            self.logger.error(f"❌ Failed to publish order: {e}", exc_info=True) 

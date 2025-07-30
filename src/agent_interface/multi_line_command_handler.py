@@ -29,16 +29,16 @@ class MultiLineCommandHandler:
 
         ping_topic = self.topic_manager.get_heartbeat_topic(ping=True)
         self.mqtt_client.subscribe(ping_topic, self._handle_heartbeat)
-        logger.info(f"MultiLineCommandHandler initialized and subscribed to {ping_topic}")
+        # logger.debug(f"MultiLineCommandHandler initialized and subscribed to {ping_topic}")
 
         # Subscribe to a wildcard topic for all lines
         command_topic = self.topic_manager.get_agent_command_topic_wildcard()
         self.mqtt_client.subscribe(command_topic, self._handle_command_message)
-        logger.info(f"MultiLineCommandHandler initialized and subscribed to {command_topic}")
+        # logger.debug(f"MultiLineCommandHandler initialized and subscribed to {command_topic}")
     
     def _handle_heartbeat(self, topic: str, payload: bytes):
         if payload.decode() == "ping":
-            logger.debug(f"🔔 Heartbeat ping from {topic}, sending pong")
+            # logger.debug(f"🔔 Heartbeat ping from {topic}, sending pong")
             self.mqtt_client.publish(self.topic_manager.get_heartbeat_topic(ping=False), "pong")
         else:
             logger.warning(f"Received unexpected heartbeat payload: {payload.decode()}")
@@ -48,7 +48,6 @@ class MultiLineCommandHandler:
         Callback for incoming MQTT command messages.
         Parses the topic to get line_id and device_id, then validates the payload.
         """
-        logger.info(f"Received command message: {topic} -> {payload.decode()}")
         try:
             if not payload or not payload.strip():
                 logger.warning("Empty payload received, ignoring.")
@@ -82,7 +81,7 @@ class MultiLineCommandHandler:
             
         except Exception as e:
             msg = f"Failed to process command: {e}"
-            logger.error(msg)
+            logger.error(msg, exc_info=True)
             # We might not have line_id if topic parsing fails, so publish to a general error topic
             self._publish_response(None, command_data.get("command_id"), msg)
 
@@ -133,7 +132,7 @@ class MultiLineCommandHandler:
                 
         except Exception as e:
             msg = f"Failed to execute command {action}: {e}"
-            logger.error(msg)
+            logger.error(msg, exc_info=True)
             self._publish_response(line_id, command_id, msg)
 
     def _handle_move_agv(self, agv: AGV, params: Dict[str, Any], command_id: Optional[str] = None):
@@ -252,23 +251,24 @@ class MultiLineCommandHandler:
         if self.factory.kpi_calculator:
             final_scores = self.factory.kpi_calculator.get_final_score()
             
-            # 打印到终端（与factory.print_final_scores()相同格式）
-            print(f"\n{'='*60}")
-            print("🏆 最终竞赛得分")
-            print(f"{'='*60}")
-            print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
-            print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
-            print(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
-            print(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
-            print(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
-            print(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
-            print(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
-            print(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
-            print(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
-            print(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
-            print(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
-            print(f"\n总得分: {final_scores['total_score']:.2f}")
-            print(f"{'='*60}\n")
+            # Log the scores to the console
+            score_logger = logging.getLogger("scores")
+            score_logger.info("\n%s", '='*60)
+            score_logger.info("🏆 最终竞赛得分")
+            score_logger.info("%s", '='*60)
+            score_logger.info(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
+            score_logger.info(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
+            score_logger.info(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
+            score_logger.info(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
+            score_logger.info(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
+            score_logger.info(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
+            score_logger.info(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
+            score_logger.info(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
+            score_logger.info(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
+            score_logger.info(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
+            score_logger.info(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
+            score_logger.info(f"\n总得分: {final_scores['total_score']:.2f}")
+            score_logger.info("%s\n", '='*60)
             
             # 发布得分到MQTT（不包含原始指标）
             result_topic = self.topic_manager.get_result_topic()
@@ -285,12 +285,12 @@ class MultiLineCommandHandler:
             result_json = json.dumps(scores_only)
             
             self.mqtt_client.publish(result_topic, result_json)
-            print(f"✅ 结果已发布到 {result_topic}")
+            logger.info(f"✅ 结果已发布到 {result_topic}")
             
             # Also send a response to confirm the action was completed
             self._publish_response(line_id, command_id, f"Results published to {result_topic}")
         else:
-            print("❌ KPI计算器未初始化")
+            logger.error("❌ KPI计算器未初始化")
             self._publish_response(line_id, command_id, "KPI calculator not initialized")
 
     def _publish_response(self, line_id: Optional[str], command_id: Optional[str], response_message: str):

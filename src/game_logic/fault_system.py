@@ -1,6 +1,7 @@
 # src/game_logic/fault_system.py
 import random
 import simpy
+import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
@@ -26,9 +27,10 @@ class FaultSystem:
     简化的故障系统：冻结设备，过一段时间解冻
     """
     
-    def __init__(self, env: simpy.Environment, devices: Dict, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None, kpi_calculator=None, **kwargs):
+    def __init__(self, env: simpy.Environment, devices: Dict, logger: logging.LoggerAdapter, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, line_id: Optional[str] = None, kpi_calculator=None, **kwargs):
         self.env = env
         self.factory_devices = devices
+        self.logger = logger
         self.mqtt_client = mqtt_client
         self.topic_manager = topic_manager
         self.line_id = line_id
@@ -81,7 +83,7 @@ class FaultSystem:
         
         # Check if the device has already been injected with a fault
         if target_device in self.active_faults:
-            print(f"[{self.env.now:.2f}] ⚠️  设备 {target_device} 已有故障，跳过注入")
+            self.logger.warning(f"⚠️  设备 {target_device} 已有故障，跳过注入")
             return
         
         device = self.factory_devices[target_device]
@@ -90,9 +92,9 @@ class FaultSystem:
         if fault_type == FaultType.AGV_FAULT and device.status != DeviceStatus.IDLE:
             if target_device not in self.pending_agv_faults:
                 self.pending_agv_faults[target_device] = fault_type
-                print(f"[{self.env.now:.2f}] ⚠️  AGV {target_device} is currently {device.status.value}, fault injection is pending.")
+                self.logger.info(f"⚠️  AGV {target_device} is currently {device.status.value}, fault injection is pending.")
             else:
-                print(f"[{self.env.now:.2f}] ⚠️  AGV {target_device} already has a pending fault, skipping new injection.")
+                self.logger.debug(f"⚠️  AGV {target_device} already has a pending fault, skipping new injection.")
             return
 
         # Inject the fault now for non-AGVs or idle AGVs
@@ -118,7 +120,7 @@ class FaultSystem:
         """立即注入故障的核心逻辑"""
         if device_id in self.active_faults:
             # This check is important for when called externally
-            print(f"[{self.env.now:.2f}] ⚠️  设备 {device_id} 已有故障，无法注入新故障")
+            self.logger.warning(f"⚠️  设备 {device_id} 已有故障，无法注入新故障")
             return
 
         if duration is None:
@@ -139,22 +141,19 @@ class FaultSystem:
         # Special handling for conveyors - interrupt processing instead of main action
         if hasattr(device, 'interrupt_all_processing'):
             interrupted_count = device.interrupt_all_processing()
-            print(f"[{self.env.now:.2f}] 🚫 {device_id}: Interrupted {interrupted_count} processing operations")
+            self.logger.info(f"🚫 {device_id}: Interrupted {interrupted_count} processing operations")
         # For other devices, interrupt the main action
         elif hasattr(device, 'action') and device.action and device.action.is_alive and device.action != self.env.active_process:
             device.action.interrupt("Fault injected")
         
         device.set_status(DeviceStatus.FAULT)
-        device.publish_status(f"[{self.env.now:.2f}] {device_id}: Fault injected: {fault.symptom}")
+        device.publish_status(f"{device_id}: Fault injected: {fault.symptom}")
         
         # If the device has a fault symptom attribute, set it
         if hasattr(device, 'fault_symptom'):
             device.fault_symptom = fault.symptom
         
-        print(f"[{self.env.now:.2f}] 💥 故障注入: {device_id}")
-        print(f"   - 症状: {fault.symptom}")
-        print(f"   - 持续时间: {fault.duration:.1f}s")
-        print(f"   - 🚫 设备已冻结")
+        self.logger.warning(f"💥 故障注入: {device_id}; 症状: {fault.symptom}; 持续时间: {fault.duration:.1f}s")
         
         self._send_fault_alert(device_id, fault)
         
@@ -191,7 +190,7 @@ class FaultSystem:
             
         except simpy.Interrupt:
             # Fault process interrupted (e.g., manual repair)
-            print(f"[{self.env.now:.2f}] 🔧 故障过程被中断: {fault.device_id}")
+            self.logger.info(f"🔧 故障过程被中断: {fault.device_id}")
 
     def _clear_fault(self, device_id: str):
         """Clear the fault and unfreeze the device"""
@@ -219,8 +218,8 @@ class FaultSystem:
             if hasattr(device, 'fault_symptom'):
                 device.fault_symptom = None
             
-            print(f"[{self.env.now:.2f}] ✅ 故障自动解除: {device_id}")
-            print(f"   - 🔓 设备已解冻")
+            self.logger.info(f"✅ 故障自动解除: {device_id}")
+            self.logger.info(f"   - 🔓 设备已解冻")
             
             # Report recovery time to KPI calculator
             if self.kpi_calculator and recovery_time > 0:
@@ -274,10 +273,10 @@ class FaultSystem:
             
             # 清除故障
             self._clear_fault(device_id)
-            print(f"[{self.env.now:.2f}] 🔧 强制清除故障: {device_id}")
+            self.logger.info(f"🔧 强制清除故障: {device_id}")
             return True
         
-        print(f"[{self.env.now:.2f}] ❌ 设备 {device_id} 无故障需要清除")
+        self.logger.warning(f"❌ 设备 {device_id} 无故障需要清除")
         return False
 
     def get_device_symptom(self, device_id: str) -> Optional[str]:

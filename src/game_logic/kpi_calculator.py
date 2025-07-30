@@ -1,5 +1,6 @@
 # src/game_logic/kpi_calculator.py
 import simpy
+import logging
 from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from dataclasses import dataclass, field
 
@@ -7,6 +8,7 @@ from config.schemas import KPIUpdate, NewOrder
 from config.topics import KPI_UPDATE_TOPIC
 from src.utils.mqtt_client import MQTTClient
 from src.utils.topic_manager import TopicManager
+from src.utils.logger_config import get_sim_logger
 
 if TYPE_CHECKING:
     from src.simulation.entities.product import Product
@@ -91,6 +93,7 @@ class KPICalculator:
     
     def __init__(self, env: simpy.Environment, mqtt_client: Optional[MQTTClient] = None, topic_manager: Optional[TopicManager] = None, config: Optional[Dict[str, Any]] = None):
         self.env = env
+        self.logger = get_sim_logger(self.env, "simulation.kpi_calculator")
         self.mqtt_client = mqtt_client
         self.topic_manager = topic_manager
         self.stats = ProductionStats()
@@ -279,7 +282,7 @@ class KPICalculator:
             if not isinstance(duration, (int, float)):
                 raise TypeError(f"Duration must be a number, got {type(duration).__name__}: {duration}")
         except Exception as e:
-            print(f"[DEBUG] add_energy_cost called with: device_id={device_id}, line_id={line_id}, duration={duration}, is_peak_hour={is_peak_hour}")
+            self.logger.error(f"add_energy_cost called with: device_id={device_id}, line_id={line_id}, duration={duration}, is_peak_hour={is_peak_hour}", exc_info=True)
             raise
         
         base_cost = duration * self.cost_parameters['energy_cost_per_second']
@@ -332,7 +335,7 @@ class KPICalculator:
                 tracking.product_type == product_type and 
                 tracking.production_start_time is None):
                 tracking.production_start_time = self.env.now
-                print(f"[KPI] Product {product.id} (tracking: {tracking_id}) started production at {self.env.now:.2f}")
+                self.logger.debug(f"Product {product.id} (tracking: {tracking_id}) started production")
                 break
     
     def register_agv_charge(self, agv_id: str, line_id: Optional[str], is_active: bool, charge_duration: float):
@@ -548,9 +551,9 @@ class KPICalculator:
                     from config.topics import KPI_UPDATE_TOPIC
                     topic = KPI_UPDATE_TOPIC
                 self.mqtt_client.publish(topic, kpi_update.model_dump_json())
-                # print(f"[{self.env.now:.2f}] 📊 KPI Update published")
+                # self.logger.debug("📊 KPI Update published")
         except Exception as e:
-            print(f"[{self.env.now:.2f}] ❌ Failed to publish KPI update: {e}")
+            self.logger.error(f"❌ Failed to publish KPI update: {e}", exc_info=True)
     
     def force_kpi_update(self):
         """Force an immediate KPI update (bypasses change detection)."""
@@ -675,22 +678,24 @@ class KPICalculator:
     def print_final_scores(self):
         """Print final competition scores. Should be called only when simulation truly ends."""
         final_scores = self.get_final_score()
-        print(f"\n{'='*60}")
-        print("🏆 最终竞赛得分")
-        print(f"{'='*60}")
-        print(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
-        print(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
-        print(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
-        print(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
-        print(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
-        print(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
-        print(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
-        print(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
-        print(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
-        print(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
-        print(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
-        print(f"\n总得分: {final_scores['total_score']:.2f}")
-        print(f"{'='*60}\n")
+        # Use a generic logger, as this might be called from outside the simulation loop
+        score_logger = logging.getLogger("scores")
+        score_logger.info(f"\n{'='*60}")
+        score_logger.info("🏆 最终竞赛得分")
+        score_logger.info(f"{'='*60}")
+        score_logger.info(f"生产效率得分 (40%): {final_scores['efficiency_score']:.2f}")
+        score_logger.info(f"  - 订单完成率: {final_scores['efficiency_components']['order_completion']:.1f}%")
+        score_logger.info(f"  - 生产周期效率: {final_scores['efficiency_components']['production_cycle']:.1f}%")
+        score_logger.info(f"  - 设备利用率: {final_scores['efficiency_components']['device_utilization']:.1f}%")
+        score_logger.info(f"\n质量与成本得分 (30%): {final_scores['quality_cost_score']:.2f}")
+        score_logger.info(f"  - 一次通过率: {final_scores['quality_cost_components']['first_pass_rate']:.1f}%")
+        score_logger.info(f"  - 成本效率: {final_scores['quality_cost_components']['cost_efficiency']:.1f}%")
+        score_logger.info(f"\nAGV效率得分 (30%): {final_scores['agv_score']:.2f}")
+        score_logger.info(f"  - 充电策略效率: {final_scores['agv_components']['charge_strategy']:.1f}%")
+        score_logger.info(f"  - 能效比: {final_scores['agv_components']['energy_efficiency']:.1f}%")
+        score_logger.info(f"  - AGV利用率: {final_scores['agv_components']['utilization']:.1f}%")
+        score_logger.info(f"\n总得分: {final_scores['total_score']:.2f}")
+        score_logger.info(f"{'='*60}\n")
         
         # Force a final KPI update with final scores
         self.force_kpi_update()
