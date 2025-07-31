@@ -340,7 +340,7 @@ class AGV(Vehicle):
                 buffer_desc = f" {buffer_type}" if buffer_type else ""
                 product.add_history(self.env.now, f"Loaded onto {self.id} from {device.id}")
                 
-                self.set_status(DeviceStatus.INTERACTING, f"loading from {device.id}{buffer_desc}")
+                self.set_status(DeviceStatus.INTERACTING, f"loading {product.id} from {device.id}{buffer_desc}")
                 yield self.env.timeout(self.operation_time)
                 yield self.payload.put(product)
                 self.consume_battery(self.battery_consumption_per_action, "取货操作")

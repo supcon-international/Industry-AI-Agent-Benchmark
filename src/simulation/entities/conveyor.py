@@ -195,7 +195,7 @@ class Conveyor(BaseConveyor):
             self.set_status(DeviceStatus.WORKING)
             self.publish_status()
             
-            self.logger.debug(f"📋 Added {product.id} to processing order, current order: {[p.id for p in self.buffer.items]}")
+            self.logger.debug(f"📋 Added {product.id} to {self.id} processing order, current order: {[p.id for p in self.buffer.items]}")
             
             # 计算剩余传输时间（处理中断后恢复的情况）
             if product.id in self.product_elapsed_times:
@@ -311,20 +311,26 @@ class Conveyor(BaseConveyor):
                 
                 # 如果产品已经取出，说明已完成传输，应该放入下游
                 if actual_product and actual_product not in self.buffer.items and self.downstream_station:
-                    # 产品已完成传输，直接放入下游
-                    self.logger.debug(f"📦 Product {actual_product.id} already transferred, putting to downstream")
-                    yield self.downstream_station.buffer.put(actual_product)
-                    
-                    # 更新产品位置
-                    actual_product.update_location(self.downstream_station.id, self.env.now)
-                    msg = f"moved product {actual_product.id} to {self.downstream_station.id} (during fault interrupt)"
-                    self.logger.debug(msg)
-                    
-                    # 清理时间记录
-                    if actual_product.id in self.product_start_times:
-                        del self.product_start_times[actual_product.id]
-                    if actual_product.id in self.product_elapsed_times:
-                        del self.product_elapsed_times[actual_product.id]
+                    try:
+                        # 产品已完成传输，尝试放入下游
+                        self.logger.debug(f"📦 Product {actual_product.id} already transferred, putting to downstream")
+                        yield self.downstream_station.buffer.put(actual_product)
+                        
+                        # 更新产品位置
+                        actual_product.update_location(self.downstream_station.id, self.env.now)
+                        msg = f"moved product {actual_product.id} to {self.downstream_station.id} (during fault interrupt)"
+                        self.logger.debug(msg)
+                        
+                        # 清理时间记录
+                        if actual_product.id in self.product_start_times:
+                            del self.product_start_times[actual_product.id]
+                        if actual_product.id in self.product_elapsed_times:
+                            del self.product_elapsed_times[actual_product.id]
+                    except simpy.Interrupt as nested_e:
+                        # 如果在放入下游时又被中断（比如下游阻塞），需要将产品放回buffer
+                        self.logger.warning(f"⚠️ Failed to put {actual_product.id} to downstream during fault recovery: {nested_e}")
+                        # 产品需要重新处理，保留其时间记录
+                        yield self.buffer.put(actual_product)
                 else:
                     # 产品还在传输中，中断是合理的
                     self.logger.debug(f"🔄 Product {product.id} interrupted during transfer")
@@ -668,11 +674,27 @@ class TripleBufferConveyor(BaseConveyor):
                 self.logger.debug(f"🔍 {buffer_name} buffer {len(chosen_buffer.items)}/{chosen_buffer.capacity}, can opeatate:{self.downstream_station.can_operate()}")
                 
                 if buffer_name == "upper_buffer" or buffer_name == "lower_buffer":
-                    if len(chosen_buffer.items) >= chosen_buffer.capacity and self.status != DeviceStatus.BLOCKED:
-                        # 下游已满或下游工站不可操作，阻塞其他产品
-                        self._block_all_products()
+                    # 对于side buffer，如果选定的buffer满了，尝试动态切换到另一个
                     while len(chosen_buffer.items) >= chosen_buffer.capacity:
-                        yield self.env.timeout(0.1)
+                        # 检查是否可以切换到另一个buffer
+                        other_buffer = self.lower_buffer if chosen_buffer == self.upper_buffer else self.upper_buffer
+                        other_buffer_name = "lower_buffer" if chosen_buffer == self.upper_buffer else "upper_buffer"
+                        
+                        if len(other_buffer.items) < other_buffer.capacity:
+                            # 切换到另一个有空位的buffer
+                            self.logger.info(f"🔄 Switching from full {buffer_name} to available {other_buffer_name}")
+                            chosen_buffer = other_buffer
+                            buffer_name = other_buffer_name
+                            actual_product.add_history(self.env.now, f"Switched to {buffer_name} of {self.id} for rework")
+                            msg = f"switched product {actual_product.id} to {buffer_name}"
+                            self.logger.debug(msg)
+                            self.publish_status(msg)
+                            break
+                        else:
+                            # 两个buffer都满了，需要阻塞
+                            if self.status != DeviceStatus.BLOCKED:
+                                self._block_all_products()
+                            yield self.env.timeout(0.1)
                 else:
                     if (len(chosen_buffer.items) >= chosen_buffer.capacity or not self.downstream_station.can_operate()) and self.status != DeviceStatus.BLOCKED:
                         # 下游已满，阻塞其他产品
@@ -694,6 +716,19 @@ class TripleBufferConveyor(BaseConveyor):
                 while self.status == DeviceStatus.BLOCKED:
                     self.logger.debug(f"⏳ {actual_product.id} waiting for its turn or unblock...")
                     yield self.env.timeout(0.1)
+                
+                # # 对于side buffer的产品，在放入前再次检查是否需要切换buffer
+                # if buffer_name == "upper_buffer" or buffer_name == "lower_buffer":
+                #     if len(chosen_buffer.items) >= chosen_buffer.capacity:
+                #         # 尝试切换到另一个buffer
+                #         other_buffer = self.lower_buffer if chosen_buffer == self.upper_buffer else self.upper_buffer
+                #         other_buffer_name = "lower_buffer" if chosen_buffer == self.upper_buffer else "upper_buffer"
+                        
+                #         if len(other_buffer.items) < other_buffer.capacity:
+                #             self.logger.info(f"🔄 Non-leader product switching from full {buffer_name} to available {other_buffer_name}")
+                #             chosen_buffer = other_buffer
+                #             buffer_name = other_buffer_name
+                #             actual_product.add_history(self.env.now, f"Switched to {buffer_name} of {self.id} for rework")
                 
                 # 现在可以尝试放入下游
                 yield chosen_buffer.put(actual_product)
@@ -773,8 +808,6 @@ class TripleBufferConveyor(BaseConveyor):
             yield self.env.timeout(10.0)  # Update every 10 seconds
             if self.kpi_calculator:
                 self.kpi_calculator.update_device_utilization(self.id, self.line_id, self.env.now)
-        self.set_status(DeviceStatus.WORKING)
-        self.publish_status()
         
     def interrupt_all_processing(self):
         """Interrupt all active product processing. Called by fault system."""
